@@ -70,10 +70,10 @@ if [ "$MODE" = "local" ]; then
             -fsanitize=address,undefined,bounds,pointer-overflow,leak
         )
     fi  
-    clang -g -O0 ${FLAGS[@]}
+    gcc -g -O0 ${FLAGS[@]}
 elif [ "$MODE" = "fast" ]; then
     echo "Building optimized $ENV for local testing..."
-    clang -pg -O2 ${FLAGS[@]}
+    gcc -pg -O2 ${FLAGS[@]}
     echo "Built to: $ENV"
 else
     echo "Invalid mode specified: local|fast|web"
