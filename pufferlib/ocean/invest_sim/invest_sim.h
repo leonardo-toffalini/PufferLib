@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "raylib.h"
+#include <unistd.h> // for usleep
 
 // Required struct. Only use floats!
 typedef struct {
@@ -35,6 +36,8 @@ typedef struct {
     float riskless_asset;
     float risky_asset;
     int tick;
+    float* risky_asset_history;
+    float* riskless_asset_history;
 } InvestSim;
 
 void add_log(InvestSim* env) {
@@ -48,18 +51,23 @@ void add_log(InvestSim* env) {
 // Required function
 void c_reset(InvestSim* env) {
     env->prices = (float*)malloc((env->time_horizon + 1) * sizeof(float));
+    env->risky_asset_history = (float*)malloc((env->time_horizon + 1) * sizeof(float));
+    env->riskless_asset_history = (float*)malloc((env->time_horizon + 1) * sizeof(float));
     for (int i = 0; i <= env->time_horizon; i++) {
         env->prices[i] = sin(i / 10.0f) + 1;
+        env->risky_asset_history[i] = 0;
+        env->riskless_asset_history[i] = 0;
     }
-
     env->riskless_asset = 0;
     env->risky_asset = 0;
-
     memset(env->observations, 0, 3 * sizeof(float));
     env->observations[0] = env->prices[0];
     env->observations[1] = env->riskless_asset;
     env->observations[2] = env->risky_asset;
     env->tick = 0;
+    // Record initial asset values
+    env->risky_asset_history[0] = env->risky_asset;
+    env->riskless_asset_history[0] = env->riskless_asset;
 }
 
 // Required function
@@ -87,6 +95,10 @@ void c_step(InvestSim* env) {
     env->risky_asset += action;
     env->riskless_asset -= action * env->prices[env->tick];
 
+    // Record asset values at this tick
+    env->risky_asset_history[env->tick] = env->risky_asset;
+    env->riskless_asset_history[env->tick] = env->riskless_asset;
+
     if (env->tick >= env->time_horizon) {
         env->terminals[0] = 1;
         env->rewards[0] = env->riskless_asset + env->risky_asset * env->prices[env->time_horizon];
@@ -101,7 +113,7 @@ void c_step(InvestSim* env) {
 }
 
 // Required function. Should handle creating the client on first call
-void c_render(InvestSim* env) {
+void c_render_raylib(InvestSim* env) {
     if (!IsWindowReady()) {
         InitWindow(800, 600, "Investment Simulation");
         SetTargetFPS(30);
@@ -170,7 +182,91 @@ void c_render(InvestSim* env) {
 // Do not free env->observations, actions, rewards, terminals
 void c_close(InvestSim* env) {
     free(env->prices);
+    free(env->risky_asset_history);
+    free(env->riskless_asset_history);
     if (IsWindowReady()) {
         CloseWindow();
     }
+}
+
+void c_render(InvestSim* env) {
+    printf("\033[2J\033[H");
+    printf("\033[1;36mInvestment Simulation\033[0m\n");
+    printf("Time: %d/%d\n\n", env->tick, env->time_horizon);
+    printf("\033[1;34mCurrent Price: %.2f\033[0m\n", env->prices[env->tick]);
+    printf("\033[1;32mRisky Asset: %.2f\033[0m\n", env->risky_asset);
+    printf("\033[1;31mRiskless Asset: %.2f\033[0m\n\n", env->riskless_asset);
+    const int width = 120;
+    const int height = 40;
+    char chart[height][width + 1];
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            chart[i][j] = ' ';
+        }
+        chart[i][width] = '\0';
+    }
+    float min_val = INFINITY;
+    float max_val = -INFINITY;
+    for (int i = 0; i <= env->tick; i++) {
+        min_val = fminf(min_val, env->prices[i]);
+        max_val = fmaxf(max_val, env->prices[i]);
+        min_val = fminf(min_val, env->risky_asset_history[i]);
+        max_val = fmaxf(max_val, env->risky_asset_history[i]);
+        min_val = fminf(min_val, env->riskless_asset_history[i]);
+        max_val = fmaxf(max_val, env->riskless_asset_history[i]);
+    }
+    float range = max_val - min_val;
+    min_val -= range * 0.1f;
+    max_val += range * 0.1f;
+    // Plot price history
+    for (int i = 0; i < width; i++) {
+        int time_idx = (i * env->tick) / (width - 1);
+        float price = env->prices[time_idx];
+        int y = (int)((price - min_val) * (height - 1) / (max_val - min_val));
+        y = height - 1 - y;
+        if (y >= 0 && y < height) {
+            chart[y][i] = '*';
+        }
+    }
+    // Plot risky asset history
+    for (int i = 0; i < width; i++) {
+        int time_idx = (i * env->tick) / (width - 1);
+        float risky = env->risky_asset_history[time_idx];
+        int y = (int)((risky - min_val) * (height - 1) / (max_val - min_val));
+        y = height - 1 - y;
+        if (y >= 0 && y < height) {
+            chart[y][i] = '^';
+        }
+    }
+    // Plot riskless asset history
+    for (int i = 0; i < width; i++) {
+        int time_idx = (i * env->tick) / (width - 1);
+        float riskless = env->riskless_asset_history[time_idx];
+        int y = (int)((riskless - min_val) * (height - 1) / (max_val - min_val));
+        y = height - 1 - y;
+        if (y >= 0 && y < height) {
+            chart[y][i] = 'v';
+        }
+    }
+    printf("\033[1;34mPrice: ●\033[0m  \033[1;32mRisky: ●\033[0m  \033[1;31mRiskless: ●\033[0m\n");
+    printf("┌");
+    for (int i = 0; i < width; i++) printf("─");
+    printf("┐\n");
+    for (int i = 0; i < height; i++) {
+        printf("│");
+        for (int j = 0; j < width; j++) {
+            char c = chart[i][j];
+            if (c == '*') printf("\033[1;34m●\033[0m");
+            else if (c == '^') printf("\033[1;32m●\033[0m");
+            else if (c == 'v') printf("\033[1;31m●\033[0m");
+            else printf(" ");
+        }
+        printf("│\n");
+    }
+    printf("└");
+    for (int i = 0; i < width; i++) printf("─");
+    printf("┘\n");
+    printf("Min: %.2f  Max: %.2f\n", min_val, max_val);
+    fflush(stdout);
+    usleep(100000); // Sleep for 0.1 seconds (100,000 microseconds)
 }

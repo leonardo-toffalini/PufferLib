@@ -5,7 +5,7 @@ import numpy as np
 
 import pufferlib
 import pufferlib.emulation
-import pufferlib.postprocess
+from pufferlib.pufferlib import EpisodeStats
 
 ALIASES = {
     'cartpole': 'CartPole-v0',
@@ -29,7 +29,7 @@ def make(name, render_mode='rgb_array', buf=None):
     env = gymnasium.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -1, 1))
     #env = gymnasium.wrappers.NormalizeReward(env, gamma=gamma)
     env = gymnasium.wrappers.TransformReward(env, lambda reward: np.clip(reward, -1, 1))
-    env = pufferlib.postprocess.EpisodeStats(env)
+    env = EpisodeStats(env)
     return pufferlib.emulation.GymnasiumPufferEnv(env=env, buf=buf)
 
 class MountainCarWrapper(gymnasium.Wrapper):

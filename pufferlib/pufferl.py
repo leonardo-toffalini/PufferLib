@@ -910,6 +910,7 @@ def eval(env_name, args=None, vecenv=None, policy=None):
     if not isinstance(vecenv, pufferlib.vector.Serial):
         raise pufferlib.APIUsageError('eval requires Serial vector env')
 
+    args['mode'] = 'eval'
     policy = policy or load_policy(args, vecenv)
     ob, info = vecenv.reset()
     driver = vecenv.driver_env

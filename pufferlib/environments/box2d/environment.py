@@ -5,7 +5,7 @@ import functools
 
 import pufferlib.emulation
 import pufferlib.environments
-import pufferlib.postprocess
+from pufferlib.pufferlib import EpisodeStats
 
 
 def env_creator(name='car-racing'):
@@ -17,5 +17,5 @@ def make(name, domain_randomize=True, continuous=False, render_mode='rgb_array',
 
     env = gymnasium.make(name, render_mode=render_mode,
         domain_randomize=domain_randomize, continuous=continuous)
-    env = pufferlib.postprocess.EpisodeStats(env)
+    env = EpisodeStats(env)
     return pufferlib.emulation.GymnasiumPufferEnv(env=env, buf=buf)
