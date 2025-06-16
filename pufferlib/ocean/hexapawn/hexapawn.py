@@ -5,7 +5,7 @@ import pufferlib
 from pufferlib.ocean.hexapawn import binding
 
 class Hexapawn(pufferlib.PufferEnv):
-    def __init__(self, num_envs=1, render_mode=None, log_interval=128, size=3, buf=None, seed=0):
+    def __init__(self, num_envs=1, reward_move_valid=0.01, reward_move_invalid=-0.01, render_mode=None, log_interval=128, size=3, buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
             shape=(size*size,), dtype=np.uint8)
         num_move_types = 6  # up, down, 4 diagonals
@@ -16,7 +16,8 @@ class Hexapawn(pufferlib.PufferEnv):
 
         super().__init__(buf)
         self.c_envs = binding.vec_init(self.observations, self.actions, self.rewards,
-            self.terminals, self.truncations, num_envs, seed, size=size)
+            self.terminals, self.truncations, num_envs, seed, reward_move_valid=reward_move_valid,
+            reward_move_invalid=reward_move_invalid, size=size)
  
     def reset(self, seed=0):
         binding.vec_reset(self.c_envs, seed)

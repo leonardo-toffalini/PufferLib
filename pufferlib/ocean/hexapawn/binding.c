@@ -5,6 +5,8 @@
 
 static int my_init(Env* env, PyObject* args, PyObject* kwargs) {
     env->size = unpack(kwargs, "size");
+    env->reward_move_valid = unpack(kwargs, "reward_move_valid");
+    env->reward_move_invalid = unpack(kwargs, "reward_move_invalid");
     return 0;
 }
 
