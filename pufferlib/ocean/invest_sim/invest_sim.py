@@ -7,13 +7,14 @@ import pufferlib
 from pufferlib.ocean.invest_sim import binding
 
 class InvestSim(pufferlib.PufferEnv):
-    def __init__(self, num_envs=1, render_mode=None, log_interval=128, time_horizon=100, buf=None, seed=0):
+    def __init__(self, num_envs=1, render_mode=None, log_interval=128, time_horizon=100, window_size=10, buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(4 + window_size,), dtype=np.float32
         )
-        self.single_action_space = gymnasium.spaces.Box(
-            low=-100.0, high=100.0, shape=(1,), dtype=np.float32
-        )
+        # self.single_action_space = gymnasium.spaces.Box(
+        #     low=-100.0, high=100.0, shape=(1,), dtype=np.float32
+        # )
+        self.single_action_space = gymnasium.spaces.Discrete(100)
         self.render_mode = render_mode
         self.num_agents = num_envs
         self.log_interval = log_interval
@@ -21,7 +22,7 @@ class InvestSim(pufferlib.PufferEnv):
         super().__init__(buf)
         self.actions = self.actions.flatten()
         self.c_envs = binding.vec_init(self.observations, self.actions, self.rewards,
-            self.terminals, self.truncations, num_envs, seed, time_horizon=time_horizon)
+            self.terminals, self.truncations, num_envs, seed, time_horizon=time_horizon, window_size=window_size)
  
     def reset(self, seed=0):
         binding.vec_reset(self.c_envs, seed)
@@ -49,9 +50,9 @@ class InvestSim(pufferlib.PufferEnv):
         binding.vec_close(self.c_envs)
 
 if __name__ == '__main__':
-    N = 1
+    N = 1024
 
-    env = InvestSim(num_envs=N, time_horizon=10)
+    env = InvestSim(num_envs=N, time_horizon=20, window_size=10)
     env.reset()
     steps = 0
 
@@ -66,4 +67,5 @@ if __name__ == '__main__':
         steps += N
         i += 1
 
-    print('InvestSim SPS:', int(steps / (time.time() - start)))
+    sps = int(steps / (time.time() - start))
+    print(f'InvestSim SPS: {sps:,}')

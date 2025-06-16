@@ -5,6 +5,7 @@
 
 static int my_init(Env* env, PyObject* args, PyObject* kwargs) {
     env->time_horizon = unpack(kwargs, "time_horizon");
+    env->window_size = unpack(kwargs, "window_size");
     return 0;
 }
 
