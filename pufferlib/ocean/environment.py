@@ -148,6 +148,7 @@ MAKE_FUNCTIONS = {
     'pacman': 'Pacman',
     'spaces': make_spaces,
     'multiagent': make_multiagent,
+    'hexapawn': 'Hexapawn',
 }
 
 def env_creator(name='squared', *args, **kwargs):

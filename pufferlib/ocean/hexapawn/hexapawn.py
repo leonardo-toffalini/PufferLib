@@ -1,5 +1,3 @@
-'''A simple sample environment. Use this as a template for your own envs.'''
-
 import gymnasium
 import numpy as np
 
@@ -10,7 +8,8 @@ class Hexapawn(pufferlib.PufferEnv):
     def __init__(self, num_envs=1, render_mode=None, log_interval=128, size=3, buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
             shape=(size*size,), dtype=np.uint8)
-        self.single_action_space = gymnasium.spaces.Discrete(size*size)
+        num_move_types = 6  # up, down, 4 diagonals
+        self.single_action_space = gymnasium.spaces.Discrete(size * size * num_move_types)
         self.render_mode = render_mode
         self.num_agents = num_envs
         self.log_interval = log_interval
@@ -45,13 +44,14 @@ class Hexapawn(pufferlib.PufferEnv):
 
 if __name__ == '__main__':
     N = 4096
+    size = 3
 
-    env = Squared(num_envs=N)
+    env = Hexapawn(num_envs=N, size=size)
     env.reset()
     steps = 0
 
     CACHE = 1024
-    actions = np.random.randint(0, 5, (CACHE, N))
+    actions = np.random.randint(0, size * size * 6, (CACHE, N))
 
     i = 0
     import time
