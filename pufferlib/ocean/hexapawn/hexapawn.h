@@ -223,19 +223,13 @@ void c_step(Hexapawn* env) {
 
   // Agent's move
   if (make_move(env, move, AGENT)) {
-    env->rewards[0] = 0; // env->reward_move_valid;
+    env->rewards[0] += 0.0; // env->reward_move_valid;
+    // check if game ended after agent move
+    if (env->terminals[0] != 1) {
+      scripted_opponent(env);
+    } 
   } else {
-    env->rewards[0] = -1; // env->reward_move_invalid;
-    env->terminals[0] = 1;  // Invalid move ends the game
-  }
-
-  // If game is not over, opponent moves
-  if (env->terminals[0] != 1) {
-    scripted_opponent(env);
-    // If opponent's move resulted in a terminal state, update rewards
-    if (env->terminals[0] == 1) {
-      env->rewards[0] = -1;  // Opponent won
-    }
+    env->rewards[0] = env->reward_move_invalid;
   }
 
   if(env->rewards[0] > 1){
@@ -252,17 +246,6 @@ void c_step(Hexapawn* env) {
   }
 }
 
-Client* make_client(Hexapawn* env) {
-  Client* client = (Client*)calloc(1, sizeof(Client));
-  client->white_pawn = LoadTexture("./pufferlib/resources/hexapawn/white_pawn.png");
-  client->black_pawn = LoadTexture("./pufferlib/resources/hexapawn/black_pawn.png");
-  return client;
-}
-
-void close_client(Client* client) {
-    free(client);
-}
-
 // Required function. Should handle creating the client on first call
 void c_render(Hexapawn* env) {
   const Color BG1 = (Color){27, 27, 27, 255};
@@ -273,13 +256,12 @@ void c_render(Hexapawn* env) {
   int window_height = cell_size * env->size;
 
   if (!IsWindowReady()) {
-    InitWindow(window_width, window_height, "PufferLib Hexapawn");
-    SetTargetFPS(60);
+    InitWindow(window_width, window_height, "Puffer Hexapawn");
+    SetTargetFPS(30);
   } else if (GetScreenWidth() != window_width || GetScreenHeight() != window_height) {
     SetWindowSize(window_width, window_height);
   }
 
-  // Standard across our envs so exiting is always the same
   if (IsKeyDown(KEY_ESCAPE)) {
     CloseWindow();
     exit(0);
@@ -289,7 +271,6 @@ void c_render(Hexapawn* env) {
   BeginDrawing();
   ClearBackground(BG1);
 
-  // Draw pieces
   for (int i = 0; i < env->size; i++) {
     for (int j = 0; j < env->size; j++) {
       int piece = env->observations[i*env->size + j];
@@ -302,12 +283,9 @@ void c_render(Hexapawn* env) {
       int center_y = i * cell_size + cell_size/2;
       int radius = cell_size/3;
 
-      // Draw piece
       DrawCircle(center_x, center_y, radius, piece_color);
-      // Draw piece highlight
-      DrawCircleGradient(center_x - radius/3, center_y - radius/3, radius/3, (Color){255, 255, 255, 100}, (Color){255, 255, 255, 50});
-      // DrawTexture(client->white_pawn, j * cell_size, i * cell_size, piece_color);
-      // void DrawTexture(Texture2D texture, int posX, int posY, Color tint);
+      DrawCircleGradient(center_x - radius/3, center_y - radius/3, radius/3, (Color){255, 255, 255, 80}, (Color){255, 255, 255, 10});
+      DrawCircleGradient(center_x, center_y, radius, (Color){255, 255, 255, 50}, (Color){255, 255, 255, 5});
     }
   }
 
