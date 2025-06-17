@@ -2,12 +2,6 @@
 #include <string.h>
 #include "raylib.h"
 
-const unsigned char NOOP = 0;
-const unsigned char DOWN = 1;
-const unsigned char UP = 2;
-const unsigned char LEFT = 3;
-const unsigned char RIGHT = 4;
-
 const unsigned char EMPTY = 0;
 const unsigned char AGENT = 1;
 const unsigned char OPPONENT = 2;
@@ -99,12 +93,22 @@ int p2i(Hexapawn* env, Position p) {
 }
 
 int is_valid_move(Hexapawn* env, Move m, int player) {
-  if (env->observations[p2i(env, m.from)] != player) return 0;
+  // Check if move is within board bounds
+  if (m.from.r < 0 || m.from.r >= env->size || m.from.c < 0 || m.from.c >= env->size ||
+      m.to.r < 0 || m.to.r >= env->size || m.to.c < 0 || m.to.c >= env->size) {
+    return 0;
+  }
+
+  if (env->observations[p2i(env, m.from)] != player) {
+    return 0;
+  } 
   // illegal to move backwards
   if (player == AGENT) {
     if (m.from.r > m.to.r) return 0;
   } else if (player == OPPONENT) {
-    if (m.from.r < m.to.r) return 0;
+    if (m.from.r < m.to.r) {
+      return 0;
+    } 
   }
 
   int other_player = player == AGENT ? OPPONENT : AGENT;
@@ -116,7 +120,6 @@ int is_valid_move(Hexapawn* env, Move m, int player) {
     // can only go to empty cell forwards
     return env->observations[p2i(env, m.to)] == EMPTY ? 1 : 0;
   }
-  return 0;
 }
 
 int num_valid_moves(Hexapawn* env, int player) {
@@ -130,64 +133,57 @@ int num_valid_moves(Hexapawn* env, int player) {
 }
 
 int reached_other_side(Hexapawn* env, int player) {
-  if (player == AGENT) {
+  switch (player) {
+    case AGENT:
     for (int i = 0; i < env->size; i++) {
       if (env->observations[env->size*(env->size-1) + i] == AGENT) {
-        return 1;
+          return 1;
       }
     }
-  } else if (player == OPPONENT) {
+    case OPPONENT:
     for (int i = 0; i < env->size; i++) {
       if (env->observations[i] == OPPONENT) {
-        return 1;
+          return 1;
       }
     }
-  } else {
-    return 0;
+    default:
+      return 0;
   }
 }
 
 int make_move(Hexapawn* env, Move move, int player) {
   if (!is_valid_move(env, move, player)) return 0;
+  printf("player: %d, move: (%d, %d) -> (%d, %d)\n", player, move.from.r, move.from.c, move.to.r, move.to.c);
 
   env->observations[p2i(env, move.from)] = EMPTY;
   env->observations[p2i(env, move.to)] = player;
-
-  // for (int i = 0; i < env->size; i++) {
-  //   for (int j = 0; j < env->size; j++) {
-  //     int piece = env->observations[i*env->size + j];
-  //     printf("%d ", piece);
-  //   }
-  //   printf("\n");
-  // }
   
-  if (reached_other_side(env, player)) {
-    env->terminals[0] = 1;
-  }
-
-  // check if opponent has valid moves left
   int other_player = player == AGENT ? OPPONENT : AGENT;
-  if (num_valid_moves(env, other_player) == 0) {
+  int opponent_has_moves = num_valid_moves(env, other_player) > 0;
+  
+  // First check if current player won by reaching other side
+  if (reached_other_side(env, player)) {
+    printf("player %d reached other side\n", player);
     env->terminals[0] = 1;
+    env->rewards[0] = player == AGENT ? 1 : -1;
+    return 1;
   }
-
-  if (env->terminals[0] == 1) {
-    if (player == AGENT) {
-      env->rewards[0] = 1;
-    } else if (player == OPPONENT) {
-      env->rewards[0] = -1;
-    }
+  // Then check if opponent has no moves (only if current player hasn't won)
+  else if (!opponent_has_moves) {
+    printf("no valid moves left for player %d\n", other_player);
+    env->terminals[0] = 1;
+    env->rewards[0] = player == AGENT ? 1 : -1;
+    return 1;
   }
 
   return 1;
 }
 
 void scripted_opponent(Hexapawn* env) {
-  // do first legal move
+  // Try moves in sequence until finding a valid one
   int num_total_moves = env->size * env->size * 6;
   for (int i = 0; i < num_total_moves; i++) {
     Move move = decode_action(env, i);
-    printf("AAAAAA\n");
     if (make_move(env, move, OPPONENT)) {
       break;
     } 
@@ -205,7 +201,7 @@ void add_log(Hexapawn* env) {
 // Required function
 void c_reset(Hexapawn* env) {
     int tiles = env->size*env->size;
-    memset(env->observations, 0, tiles*sizeof(unsigned char));
+    for (int i = 0; i < tiles; i++) env->observations[i] = EMPTY;
     for (int i = 0; i < env->size; i++) env->observations[i] = AGENT;
     for (int i = 0; i < env->size; i++) env->observations[(env->size-1)*env->size + i] = OPPONENT;
     env->r = 0;
@@ -221,16 +217,21 @@ void c_step(Hexapawn* env) {
   int action = (int)env->actions[0];
   Move move = decode_action(env, action);
 
+  // Agent's move
   if (make_move(env, move, AGENT)) {
-    env->rewards[0] += env->reward_move_valid;
-    env->log.episode_return += env->reward_move_valid;
-    if (env->terminals[0] != 1) {
-      printf("BBBBBBBBBBB\n");
-      scripted_opponent(env);
-    }
+    env->rewards[0] = env->reward_move_valid;
   } else {
-    env->rewards[0] += env->reward_move_invalid;
-    env->log.episode_return += env->reward_move_invalid;
+    env->rewards[0] = env->reward_move_invalid;
+    env->terminals[0] = 1;  // Invalid move ends the game
+  }
+
+  // If game is not over, opponent moves
+  if (env->terminals[0] != 1) {
+    scripted_opponent(env);
+    // If opponent's move resulted in a terminal state, update rewards
+    if (env->terminals[0] == 1) {
+      env->rewards[0] = -1;  // Opponent won
+    }
   }
 
   if(env->rewards[0] > 1){
@@ -249,17 +250,25 @@ void c_step(Hexapawn* env) {
 
 // Required function. Should handle creating the client on first call
 void c_render(Hexapawn* env) {
-  const Color PUFF_BACKGROUND = (Color){6, 24, 24, 255};
+  const Color PUFF_BACKGROUND = (Color){27, 27, 27, 255};
+  const Color PUFF_BACKGROUND2 = (Color){13, 13, 13, 255};
 
   int cell_size = 128;
+  int window_width = cell_size * env->size;
+  int window_height = cell_size * env->size;
+
   if (!IsWindowReady()) {
-    InitWindow(cell_size * env->size, cell_size * env->size, "PufferLib Hexapawn");
+    InitWindow(window_width, window_height, "PufferLib Hexapawn");
     SetTargetFPS(60);
+  } else if (GetScreenWidth() != window_width || GetScreenHeight() != window_height) {
+    SetWindowSize(window_width, window_height);
   }
 
   // Standard across our envs so exiting is always the same
   if (IsKeyDown(KEY_ESCAPE)) {
+    CloseWindow();
     exit(0);
+    return;
   }
 
   BeginDrawing();
@@ -267,18 +276,13 @@ void c_render(Hexapawn* env) {
 
   int board_size = env->size * cell_size;
 
-  // Draw grid lines
-  for (int i = 0; i <= env->size; i++) {
-    // Vertical lines
-    DrawLine(i * cell_size, 0, i * cell_size, board_size, GRAY);
-    // Horizontal lines
-    DrawLine(0, i * cell_size, board_size, i * cell_size, GRAY);
-  }
 
   // Draw pieces
   for (int i = 0; i < env->size; i++) {
     for (int j = 0; j < env->size; j++) {
       int piece = env->observations[i*env->size + j];
+      if ((i + j) % 2 == 0)
+        DrawRectangle(j * cell_size - 1, i * cell_size - 1, cell_size + 1, cell_size + 1, PUFF_BACKGROUND2);
       if (piece == EMPTY) continue;
 
       Color piece_color = (piece == AGENT) ? BLUE : RED;
@@ -286,7 +290,12 @@ void c_render(Hexapawn* env) {
       int center_y = i * cell_size + cell_size/2;
       int radius = cell_size/3;
 
+      // Draw piece shadow
+      DrawCircle(center_x + 2, center_y + 2, radius, (Color){0, 0, 0, 100});
+      // Draw piece
       DrawCircle(center_x, center_y, radius, piece_color);
+      // Draw piece highlight
+      DrawCircle(center_x - radius/3, center_y - radius/3, radius/3, (Color){255, 255, 255, 100});
     }
   }
 
