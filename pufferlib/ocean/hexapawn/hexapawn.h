@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "raylib.h"
 
 const unsigned char EMPTY = 0;
@@ -158,6 +159,18 @@ int reached_other_side(Hexapawn* env, int player) {
   }
 }
 
+int count_pieces(Hexapawn* env, int player) {
+  int num_opp_pieces = 0;
+  for (int i = 0; i < env->size; i++) {
+    for (int j = 0; j < env->size; j++) {
+      int piece = env->observations[i*env->size + j];
+      if (piece == player)
+        num_opp_pieces++;
+    }
+  }
+  return num_opp_pieces;
+}
+
 int make_move(Hexapawn* env, Move move, int player) {
   if (!is_valid_move(env, move, player)) return 0;
 
@@ -174,7 +187,14 @@ int make_move(Hexapawn* env, Move move, int player) {
     return 1;
   }
   // Then check if opponent has no moves (only if current player hasn't won)
-  else if (!opponent_has_moves) {
+  if (!opponent_has_moves) {
+    env->terminals[0] = 1;
+    env->rewards[0] = player == AGENT ? 1 : -1;
+    return 1;
+  }
+  // Then check if opponent has no pieces left
+  int num_opp_pieces = count_pieces(env, other_player);
+  if (num_opp_pieces == 0) {
     env->terminals[0] = 1;
     env->rewards[0] = player == AGENT ? 1 : -1;
     return 1;
@@ -183,14 +203,44 @@ int make_move(Hexapawn* env, Move move, int player) {
   return 1;
 }
 
-void scripted_opponent(Hexapawn* env) {
+void first_move(Hexapawn* env) {
   // Try moves in sequence until finding a valid one
+  Move move;
   int num_total_moves = env->size * env->size * 6;
   for (int i = 0; i < num_total_moves; i++) {
-    Move move = decode_action(env, i);
+    move = decode_action(env, i);
     if (make_move(env, move, OPPONENT)) {
       break;
     } 
+  }
+}
+
+void random_move(Hexapawn* env) {
+  // Try moves in sequence until finding a valid one
+  srand(time(NULL));
+  int num_total_moves = env->size * env->size * 6;
+  int move_id;
+  Move move;
+  while (true) {
+    move_id = (int)(rand() % num_total_moves);
+    move = decode_action(env, move_id);
+    if (make_move(env, move, OPPONENT)) {
+      break;
+    } 
+  }
+}
+
+void scripted_opponent(Hexapawn* env, int difficulty) {
+  switch (difficulty) {
+    case 0:
+      first_move(env);
+      break;
+    case 1:
+      random_move(env);
+      break;
+    default:
+      first_move(env);
+      break;
   }
 }
 
@@ -226,7 +276,7 @@ void c_step(Hexapawn* env) {
     env->rewards[0] += 0.0; // env->reward_move_valid;
     // check if game ended after agent move
     if (env->terminals[0] != 1) {
-      scripted_opponent(env);
+      scripted_opponent(env, 1);
     } 
   } else {
     env->rewards[0] = env->reward_move_invalid;
@@ -256,6 +306,7 @@ void c_render(Hexapawn* env) {
   int window_height = cell_size * env->size;
 
   if (!IsWindowReady()) {
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(window_width, window_height, "Puffer Hexapawn");
     SetTargetFPS(30);
   } else if (GetScreenWidth() != window_width || GetScreenHeight() != window_height) {
