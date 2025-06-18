@@ -154,16 +154,7 @@ int valid_move_direction(Checkers *env, Move m) {
 int is_diagonal_move(Move m) { return m.to.r - m.from.r == m.to.c - m.from.c; }
 int move_size(Move m) { return abs(m.from.r - m.to.r); }
 
-int is_valid_move(Checkers *env, Move m) {
-  // checks:
-  // - m.from and m.to are in bounds
-  // - m.from is a piece of the same type as the player on turn
-  // - m.to is empty
-  // - move direction is forwards for a pawn
-  // - move is diagonal
-  // - move size is 1 or 2
-  // - if its not a capture only move one diagonal
-  // - if its a capture move two diagonal and theres a piece in between
+int is_valid_move_no_capture(Checkers *env, Move m) {
   if (!check_in_bounds(env, m.from) || !check_in_bounds(env, m.to))
     return 0;
 
@@ -194,6 +185,62 @@ int is_valid_move(Checkers *env, Move m) {
   return 1;
 }
 
+int capture_available(Checkers *env) {
+  int num_possible_moves = env->size * env->size * 8;
+  for (int i = 0; i < num_possible_moves; i++) {
+    Move m = decode_action(env, i);
+    if (is_valid_move_no_capture(env, m) && move_size(m) == 2)
+      return 1;
+  }
+  return 0;
+}
+
+int is_valid_move(Checkers *env, Move m) {
+  if (capture_available(env) && move_size(m) != 2)
+    return 0;
+  return is_valid_move_no_capture(env, m);
+}
+
+int num_legal_moves(Checkers *env) {
+  int res = 0;
+  int num_possible_moves = env->size * env->size * 8;
+  for (int i = 0; i < num_possible_moves; i++) {
+    Move m = decode_action(env, i);
+    if (is_valid_move_no_capture(env, m))
+      res++;
+  }
+  return res;
+}
+
+int num_pieces_by_player(Checkers *env, int player) {
+  int res = 0;
+  int player_pawn = player == AGENT ? AGENT_PAWN : OPPONENT_PAWN;
+  int player_king = player == AGENT ? AGENT_KING : OPPONENT_KING;
+  int piece;
+  for (int i = 0; i < env->size * env->size; i++) {
+    piece = env->observations[i];
+    if (piece == player_pawn || piece == player_king)
+      res++;
+  }
+  return res;
+}
+
+void try_make_king(Checkers *env) {
+  for (int i = 0; i < env->size; i++) {
+    if (env->observations[i] == OPPONENT_PAWN)
+      env->observations[i] = OPPONENT_KING;
+  }
+  for (int i = 0; i < env->size; i++) {
+    if (env->observations[env->size * (env->size - 1) + i] == AGENT_PAWN)
+      env->observations[env->size * (env->size - 1) + i] = AGENT_KING;
+  }
+}
+
+int is_game_over(Checkers *env) {
+  return num_pieces_by_player(env, env->game_state->current_player) == 0 ||
+         num_legal_moves(env) == 0;
+}
+
 void make_move(Checkers *env, int action) {
   Move m = decode_action(env, action);
   if (!is_valid_move(env, m)) {
@@ -207,11 +254,22 @@ void make_move(Checkers *env, int action) {
     Position between_pos =
         (Position){(m.from.r + m.to.r) / 2, (m.from.c + m.to.c) / 2};
     env->observations[p2i(env, between_pos)] = EMPTY;
+  }
+
+  if (is_game_over(env)) {
+    env->terminals[0] = 1;
+    env->rewards[0] = env->game_state->current_player == AGENT ? 1 : -1;
     return;
   }
-  int other_player =
-      env->game_state->current_player == AGENT ? OPPONENT : AGENT;
-  env->game_state->current_player = other_player;
+
+  try_make_king(env);
+
+  // after a capture if there is another, the player goes again
+  if (move_size(m) == 1 || !capture_available(env)) {
+    int other_player =
+        env->game_state->current_player == AGENT ? OPPONENT : AGENT;
+    env->game_state->current_player = other_player;
+  }
 }
 
 void add_log(Checkers *env) {
@@ -266,7 +324,7 @@ void c_render(Checkers *env) {
   const Color BG1 = (Color){27, 27, 27, 255};
   const Color BG2 = (Color){13, 13, 13, 255};
 
-  int cell_size = 128;
+  int cell_size = 64;
   int window_width = cell_size * env->size;
   int window_height = cell_size * env->size;
   int radius = cell_size / 3;
