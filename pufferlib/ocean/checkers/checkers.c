@@ -1,7 +1,7 @@
-#include "hexapawn.h"
+#include "checkers.h"
 
 int main() {
-  Hexapawn env = {.size = 3};
+  Checkers env = {.size = 8};
   env.observations =
       (unsigned char *)calloc(env.size * env.size, sizeof(unsigned char));
   env.actions = (int *)calloc(1, sizeof(int));
