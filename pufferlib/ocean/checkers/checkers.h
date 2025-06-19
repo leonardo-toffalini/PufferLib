@@ -121,6 +121,9 @@ int p2i(Checkers *env, Position p) {
 }
 
 int get_piece(Checkers *env, Position p) {
+  if (!check_in_bounds(env, p)) {
+    return EMPTY; // Return empty for out-of-bounds positions
+  }
   return env->observations[p2i(env, p)];
 }
 
@@ -151,10 +154,19 @@ int valid_move_direction(Checkers *env, Move m) {
   return 1; // kings can move in any direction
 }
 
-int is_diagonal_move(Move m) { return m.to.r - m.from.r == m.to.c - m.from.c; }
+int is_diagonal_move(Move m) { 
+  int dr = m.to.r - m.from.r;
+  int dc = m.to.c - m.from.c;
+  return (dr == dc) || (dr == -dc); 
+}
 int move_size(Move m) { return abs(m.from.r - m.to.r); }
 
 int is_valid_move_no_capture(Checkers *env, Move m) {
+  // Check for invalid move (out of bounds positions)
+  if (m.from.r < 0 || m.from.c < 0 || m.to.r < 0 || m.to.c < 0) {
+    return 0;
+  }
+  
   if (!check_in_bounds(env, m.from) || !check_in_bounds(env, m.to))
     return 0;
 
@@ -206,7 +218,7 @@ int num_legal_moves(Checkers *env) {
   int num_possible_moves = env->size * env->size * 8;
   for (int i = 0; i < num_possible_moves; i++) {
     Move m = decode_action(env, i);
-    if (is_valid_move_no_capture(env, m))
+    if (is_valid_move(env, m))
       res++;
   }
   return res;
@@ -237,8 +249,16 @@ void try_make_king(Checkers *env) {
 }
 
 int is_game_over(Checkers *env) {
-  return num_pieces_by_player(env, env->game_state->current_player) == 0 ||
-         num_legal_moves(env) == 0;
+  int current_player_pieces = num_pieces_by_player(env, env->game_state->current_player);
+  int other_player = env->game_state->current_player == AGENT ? OPPONENT : AGENT;
+  int other_player_pieces = num_pieces_by_player(env, other_player);
+  
+  // Game is over if current player has no pieces (opponent wins)
+  // or if current player has no legal moves (opponent wins)
+  // or if opponent has no pieces (current player wins)
+  return current_player_pieces == 0 || 
+         num_legal_moves(env) == 0 ||
+         other_player_pieces == 0;
 }
 
 void make_move(Checkers *env, int action) {
@@ -256,12 +276,6 @@ void make_move(Checkers *env, int action) {
     env->observations[p2i(env, between_pos)] = EMPTY;
   }
 
-  if (is_game_over(env)) {
-    env->terminals[0] = 1;
-    env->rewards[0] = env->game_state->current_player == AGENT ? 1 : -1;
-    return;
-  }
-
   try_make_king(env);
 
   // after a capture if there is another, the player goes again
@@ -269,6 +283,62 @@ void make_move(Checkers *env, int action) {
     int other_player =
         env->game_state->current_player == AGENT ? OPPONENT : AGENT;
     env->game_state->current_player = other_player;
+  }
+
+  // Check for game over AFTER player switch and king promotion
+  if (is_game_over(env)) {
+    env->terminals[0] = 1;
+    // Fix reward logic: give reward to the player who just won
+    // If current player has no pieces or no moves, opponent wins
+    // If opponent has no pieces, current player wins
+    int current_player_pieces = num_pieces_by_player(env, env->game_state->current_player);
+    int other_player = env->game_state->current_player == AGENT ? OPPONENT : AGENT;
+    int other_player_pieces = num_pieces_by_player(env, other_player);
+    
+    if (current_player_pieces == 0 || num_legal_moves(env) == 0) {
+      // Current player lost, opponent wins
+      env->rewards[0] = env->game_state->current_player == AGENT ? -1 : 1;
+    } else if (other_player_pieces == 0) {
+      // Opponent lost, current player wins
+      env->rewards[0] = env->game_state->current_player == AGENT ? 1 : -1;
+    }
+    return;
+  }
+}
+
+void scripted_first_move(Checkers *env) {
+  int num_possible_moves = env->size * env->size * 8;
+  for (int i = 0; i < num_possible_moves; i++) {
+    Move m = decode_action(env, i);
+    if (is_valid_move(env, m)) {
+      make_move(env, i);
+      return;
+    }
+  }
+}
+
+void scripted_random_move(Checkers *env) {
+  int num_possible_moves = env->size * env->size * 8;
+  for (int i = 0; i < num_possible_moves; i++) {
+    Move m = decode_action(env, i);
+    if (is_valid_move(env, m)) {
+      make_move(env, i);
+      return;
+    }
+  }
+}
+
+void scripted_step(Checkers *env, int difficulty) {
+  switch (difficulty) {
+  case 0:
+    scripted_first_move(env);
+    break;
+  case 1:
+    scripted_random_move(env);
+    break;
+  default:
+    scripted_random_move(env);
+    break;
   }
 }
 
@@ -299,7 +369,16 @@ void c_reset(Checkers *env) {
   }
   env->tick = 0;
   env->terminals[0] = 0;
+  
+  // Fix memory leak: free old game_state before allocating new one
+  if (env->game_state != NULL) {
+    free(env->game_state);
+  }
   env->game_state = (GameState *)malloc(sizeof(GameState));
+  if (env->game_state == NULL) {
+    // Handle malloc failure
+    return;
+  }
   env->game_state->current_player = AGENT;
 }
 
@@ -312,6 +391,13 @@ void c_step(Checkers *env) {
   make_move(env, action);
 
   env->rewards[0] = clamp(env->rewards[0], -1.0f, 1.0f);
+  if (env->terminals[0] == 1) {
+    add_log(env);
+    c_reset(env);
+    return;
+  }
+
+  scripted_step(env, 1);
   if (env->terminals[0] == 1) {
     add_log(env);
     c_reset(env);
