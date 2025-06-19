@@ -5,6 +5,7 @@
 
 static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
   env->size = unpack(kwargs, "size");
+  env->difficulty = unpack(kwargs, "difficulty");
   return 0;
 }
 
