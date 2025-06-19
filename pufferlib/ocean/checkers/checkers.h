@@ -292,11 +292,18 @@ int num_legal_moves(Checkers *env) {
 }
 
 int num_pieces_by_player(Checkers *env, int player) {
-  if (player == AGENT) {
-    return env->agent_pieces;
-  } else {
-    return env->opponent_pieces;
+  int count = 0;
+  
+  for (int i = 0; i < env->size * env->size; i++) {
+    int piece = env->observations[i];
+    if (player == AGENT && (piece == AGENT_PAWN || piece == AGENT_KING)) {
+      count++;
+    } else if (player == OPPONENT && (piece == OPPONENT_PAWN || piece == OPPONENT_KING)) {
+      count++;
+    }
   }
+  
+  return count;
 }
 
 int try_make_king(Checkers *env) {
@@ -328,25 +335,20 @@ int is_game_over(Checkers *env) {
     return env->game_over_cache;
   }
   
-  int current_player_pieces = num_pieces_by_player(env, env->current_player);
-  int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
-  int other_player_pieces = num_pieces_by_player(env, other_player);
+  // Check if either player has no pieces left
+  int agent_pieces = num_pieces_by_player(env, AGENT);
+  int opponent_pieces = num_pieces_by_player(env, OPPONENT);
 
-  if (current_player_pieces == 0 || other_player_pieces == 0) {
+  if (agent_pieces == 0 || opponent_pieces == 0) {
     env->game_over_cache = 1;
     env->game_over_valid = 1;
     return 1;
   }
   
-  int has_captures = capture_available(env);
-  if (has_captures) {
-    env->game_over_cache = 0;
-    env->game_over_valid = 1;
-    return 0;
-  }
-  
+  // Check if current player has any legal moves
   int current_pawn = env->current_player == AGENT ? AGENT_PAWN : OPPONENT_PAWN;
   int current_king = env->current_player == AGENT ? AGENT_KING : OPPONENT_KING;
+  int has_captures = capture_available(env);
   
   for (int i = 0; i < env->size * env->size; i++) {
     int piece = env->observations[i];
@@ -355,13 +357,19 @@ int is_game_over(Checkers *env) {
     int r = i / env->size;
     int c = i % env->size;
     
-    int directions[4][2] = {{-1, -1}, {-1, 1}, {1, -1}, {1, 1}};
-    for (int d = 0; d < 4; d++) {
+    int directions[8][2] = {{-1, -1}, {-1, 1}, {1, -1}, {1, 1}, 
+                           {-2, -2}, {-2, 2}, {2, -2}, {2, 2}};
+    
+    for (int d = 0; d < 8; d++) {
       int new_r = r + directions[d][0];
       int new_c = c + directions[d][1];
       
       if (new_r < 0 || new_r >= env->size || new_c < 0 || new_c >= env->size) continue;
       if (env->observations[new_r * env->size + new_c] != EMPTY) continue;
+      
+      int move_size = abs(directions[d][0]);
+      
+      if (has_captures && move_size != 2) continue;
       
       if (piece == current_pawn) {
         int move_dir = directions[d][0] > 0 ? 1 : -1;
@@ -369,12 +377,25 @@ int is_game_over(Checkers *env) {
         if (move_dir != valid_dir) continue;
       }
       
+      if (move_size == 2) {
+        int mid_r = r + directions[d][0]/2;
+        int mid_c = c + directions[d][1]/2;
+        int mid_piece = env->observations[mid_r * env->size + mid_c];
+        
+        int opponent_pawn = env->current_player == AGENT ? OPPONENT_PAWN : AGENT_PAWN;
+        int opponent_king = env->current_player == AGENT ? OPPONENT_KING : AGENT_KING;
+        
+        if (mid_piece != opponent_pawn && mid_piece != opponent_king) continue;
+      }
+      
+      // Found a legal move, game is not over
       env->game_over_cache = 0;
       env->game_over_valid = 1;
       return 0;
     }
   }
   
+  // No legal moves found for current player, game is over
   env->game_over_cache = 1;
   env->game_over_valid = 1;
   return 1;
@@ -385,6 +406,7 @@ int get_winner(Checkers *env) {
   int agent_pieces = num_pieces_by_player(env, AGENT);
   int opponent_pieces = num_pieces_by_player(env, OPPONENT);
 
+  // If one player has no pieces, the other player wins
   if (agent_pieces == 0) {
     return OPPONENT;
   }
@@ -393,11 +415,14 @@ int get_winner(Checkers *env) {
     return AGENT;
   }
 
+  // If game is over due to no legal moves, the player who can't move loses
   if (is_game_over(env)) {
+    // If it's the agent's turn and they can't move, opponent wins
+    // If it's the opponent's turn and they can't move, agent wins
     return env->current_player == AGENT ? OPPONENT : AGENT;
   }
 
-  return EMPTY;
+  return EMPTY; // Game is not over
 }
 
 void make_move(Checkers *env, int action) {
@@ -423,10 +448,7 @@ void make_move(Checkers *env, int action) {
     capture_occurred = 1;
     
     if (captured_piece == AGENT_PAWN || captured_piece == AGENT_KING) {
-      env->agent_pieces--;
       reward -= 0.05f; // Small negative reward for losing pieces
-    } else if (captured_piece == OPPONENT_PAWN || captured_piece == OPPONENT_KING) {
-      env->opponent_pieces--;
     }
   }
   
@@ -440,6 +462,9 @@ void make_move(Checkers *env, int action) {
     int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
     env->current_player = other_player;
   }
+
+  // Recalculate piece counts to ensure accuracy
+  update_piece_counts(env);
 
   // Assign intermediate rewards
   if (capture_occurred && env->current_player == OPPONENT) {
@@ -905,6 +930,15 @@ void c_step(Checkers *env) {
   int action = env->actions[0];
   env->rewards[0] = 0.0f;
   env->terminals[0] = 0;
+
+  // Safety check: terminate game if too many moves
+  if (env->tick > 200) {
+    env->terminals[0] = 1;
+    env->rewards[0] = 0.0f; // Draw
+    add_log(env);
+    c_reset(env);
+    return;
+  }
 
   make_move(env, action);
 
