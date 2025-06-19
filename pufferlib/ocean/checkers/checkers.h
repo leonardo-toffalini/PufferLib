@@ -30,11 +30,6 @@ typedef struct {
   float n; // Required as the last field
 } Log;
 
-typedef struct {
-  unsigned char current_player;
-  // ...
-} GameState;
-
 // Required that you have some struct for your env
 // Recommended that you name it the same as the env file
 typedef struct {
@@ -47,7 +42,7 @@ typedef struct {
       *terminals; // Required. We don't yet have truncations as standard yet
   int size;
   int tick;
-  GameState *game_state;
+  int current_player;
 } Checkers;
 
 typedef struct {
@@ -170,7 +165,7 @@ int is_valid_move_no_capture(Checkers *env, Move m) {
   if (!check_in_bounds(env, m.from) || !check_in_bounds(env, m.to))
     return 0;
 
-  if (get_piece_type(env, m.from) != env->game_state->current_player)
+  if (get_piece_type(env, m.from) != env->current_player)
     return 0;
 
   if (get_piece(env, m.to) != EMPTY)
@@ -187,7 +182,7 @@ int is_valid_move_no_capture(Checkers *env, Move m) {
 
   if (move_size(m) == 2) {
     int other_player =
-        env->game_state->current_player == AGENT ? OPPONENT : AGENT;
+        env->current_player == AGENT ? OPPONENT : AGENT;
     Position between_pos =
         (Position){(m.from.r + m.to.r) / 2, (m.from.c + m.to.c) / 2};
     if (get_piece_type(env, between_pos) != other_player)
@@ -249,8 +244,8 @@ void try_make_king(Checkers *env) {
 }
 
 int is_game_over(Checkers *env) {
-  int current_player_pieces = num_pieces_by_player(env, env->game_state->current_player);
-  int other_player = env->game_state->current_player == AGENT ? OPPONENT : AGENT;
+  int current_player_pieces = num_pieces_by_player(env, env->current_player);
+  int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
   int other_player_pieces = num_pieces_by_player(env, other_player);
   
   // Game is over if current player has no pieces (opponent wins)
@@ -259,6 +254,30 @@ int is_game_over(Checkers *env) {
   return current_player_pieces == 0 || 
          num_legal_moves(env) == 0 ||
          other_player_pieces == 0;
+}
+
+// Helper function to determine who won the game
+int get_winner(Checkers *env) {
+  int agent_pieces = num_pieces_by_player(env, AGENT);
+  int opponent_pieces = num_pieces_by_player(env, OPPONENT);
+  
+  // If agent has no pieces, opponent wins
+  if (agent_pieces == 0) {
+    return OPPONENT;
+  }
+  
+  // If opponent has no pieces, agent wins
+  if (opponent_pieces == 0) {
+    return AGENT;
+  }
+  
+  // Check if current player has no legal moves (opponent wins)
+  if (num_legal_moves(env) == 0) {
+    return env->current_player == AGENT ? OPPONENT : AGENT;
+  }
+  
+  // Game is not over
+  return EMPTY;
 }
 
 void make_move(Checkers *env, int action) {
@@ -281,27 +300,16 @@ void make_move(Checkers *env, int action) {
   // after a capture if there is another, the player goes again
   if (move_size(m) == 1 || !capture_available(env)) {
     int other_player =
-        env->game_state->current_player == AGENT ? OPPONENT : AGENT;
-    env->game_state->current_player = other_player;
+        env->current_player == AGENT ? OPPONENT : AGENT;
+    env->current_player = other_player;
   }
 
   // Check for game over AFTER player switch and king promotion
   if (is_game_over(env)) {
+    printf("game over\n");
     env->terminals[0] = 1;
-    // Fix reward logic: give reward to the player who just won
-    // If current player has no pieces or no moves, opponent wins
-    // If opponent has no pieces, current player wins
-    int current_player_pieces = num_pieces_by_player(env, env->game_state->current_player);
-    int other_player = env->game_state->current_player == AGENT ? OPPONENT : AGENT;
-    int other_player_pieces = num_pieces_by_player(env, other_player);
-    
-    if (current_player_pieces == 0 || num_legal_moves(env) == 0) {
-      // Current player lost, opponent wins
-      env->rewards[0] = env->game_state->current_player == AGENT ? -1 : 1;
-    } else if (other_player_pieces == 0) {
-      // Opponent lost, current player wins
-      env->rewards[0] = env->game_state->current_player == AGENT ? 1 : -1;
-    }
+    int winner = get_winner(env);
+    env->rewards[0] = winner == AGENT ? 1.0f : -1.0f;
     return;
   }
 }
@@ -347,11 +355,16 @@ void add_log(Checkers *env) {
   env->log.score += env->rewards[0];
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
-  env->log.n++;
+  env->log.n += 1;
 }
 
 // Required function
 void c_reset(Checkers *env) {
+  env->tick = 0;
+  env->terminals[0] = 0;
+  env->rewards[0] = 0.0f;
+  
+  // Initialize board
   int tiles = env->size * env->size;
   for (int i = 0; i < tiles; i++)
     env->observations[i] = EMPTY;
@@ -367,27 +380,17 @@ void c_reset(Checkers *env) {
         env->observations[i * env->size + j] = OPPONENT_PAWN;
     }
   }
-  env->tick = 0;
-  env->terminals[0] = 0;
   
-  // Fix memory leak: free old game_state before allocating new one
-  if (env->game_state != NULL) {
-    free(env->game_state);
-  }
-  env->game_state = (GameState *)malloc(sizeof(GameState));
-  if (env->game_state == NULL) {
-    // Handle malloc failure
-    return;
-  }
-  env->game_state->current_player = AGENT;
+  env->current_player = AGENT;
 }
 
 // Required function
 void c_step(Checkers *env) {
   env->tick += 1;
+  int action = env->actions[0];
   env->rewards[0] = 0.0f;
   env->terminals[0] = 0;
-  int action = env->actions[0];
+
   make_move(env, action);
 
   env->rewards[0] = clamp(env->rewards[0], -1.0f, 1.0f);
@@ -518,7 +521,6 @@ void c_render(Checkers *env) {
 // Required function. Should clean up anything you allocated
 // Do not free env->observations, actions, rewards, terminals
 void c_close(Checkers *env) {
-  free(env->game_state);
   if (IsWindowReady()) {
     CloseWindow();
   }
