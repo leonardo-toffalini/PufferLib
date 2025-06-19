@@ -5,9 +5,6 @@
 #include <string.h>
 #include <time.h>
 
-// NOTE: actions and observations could take up half the space, bc checkers is
-// only played on every other cell
-
 const unsigned char EMPTY = 0;
 const unsigned char AGENT = 1;
 const unsigned char OPPONENT = 3;
@@ -22,27 +19,30 @@ float clamp(float x, float low, float high) {
 
 // Required struct. Only use floats!
 typedef struct {
-  float perf;  // Recommended 0-1 normalized single real number perf metric
-  float score; // Recommended unnormalized single real number perf metric
-  float episode_return; // Recommended metric: sum of agent rewards over episode
-  float episode_length; // Recommended metric: number of steps of agent episode
-  // Any extra fields you add here may be exported to Python in binding.c
-  float n; // Required as the last field
+  float perf;
+  float score;
+  float episode_return;
+  float episode_length;
+  float n;
 } Log;
 
 // Required that you have some struct for your env
 // Recommended that you name it the same as the env file
 typedef struct {
-  Log log; // Required field. Env binding code uses this to aggregate logs
-  unsigned char *observations; // Required. You can use any obs type, but make
-                               // sure it matches in Python!
-  int *actions;   // Required. int* for discrete/multidiscrete, float* for box
-  float *rewards; // Required
-  unsigned char
-      *terminals; // Required. We don't yet have truncations as standard yet
+  Log log;
+  unsigned char *observations;
+  int *actions;
+  float *rewards;
+  unsigned char *terminals;
   int size;
   int tick;
   int current_player;
+  int agent_pieces;
+  int opponent_pieces;
+  int capture_available_cache;
+  int capture_available_valid;
+  int game_over_cache;
+  int game_over_valid;
 } Checkers;
 
 typedef struct {
@@ -56,11 +56,6 @@ typedef struct {
 } Move;
 
 Move decode_action(Checkers *env, int action) {
-  // Action space is size*size*8 where 8 is number of move types
-  // Move types are: NW, NE, SW, SE, 2*NW, 2*NE, 2*SW, 2*SE,
-  // 4 = 0*8 + 3 => zeroth cell, second move type
-  // 10 = 1*8 + 2 => first cell, second move type
-  // 50 = 6*8 + 2 => sixth cell, second move type
   int num_move_types = 8;
   int pos = action / num_move_types;
   int move_type = action % num_move_types;
@@ -71,37 +66,36 @@ Move decode_action(Checkers *env, int action) {
   m.to.r = m.from.r;
   m.to.c = m.from.c;
 
-  // Decode move type into target position
   switch (move_type) {
-  case 0: // NW
+  case 0:
     m.to.r = m.from.r - 1;
     m.to.c = m.from.c - 1;
     break;
-  case 1: // NE
+  case 1:
     m.to.r = m.from.r - 1;
     m.to.c = m.from.c + 1;
     break;
-  case 2: // SW
+  case 2:
     m.to.r = m.from.r + 1;
     m.to.c = m.from.c - 1;
     break;
-  case 3: // SE
+  case 3:
     m.to.r = m.from.r + 1;
     m.to.c = m.from.c + 1;
     break;
-  case 4: // 2*NW
+  case 4:
     m.to.r = m.from.r - 2;
     m.to.c = m.from.c - 2;
     break;
-  case 5: // 2*NE
+  case 5:
     m.to.r = m.from.r - 2;
     m.to.c = m.from.c + 2;
     break;
-  case 6: // 2*SW
+  case 6:
     m.to.r = m.from.r + 2;
     m.to.c = m.from.c - 2;
     break;
-  case 7: // 2*SE
+  case 7:
     m.to.r = m.from.r + 2;
     m.to.c = m.from.c + 2;
     break;
@@ -111,13 +105,12 @@ Move decode_action(Checkers *env, int action) {
 }
 
 int p2i(Checkers *env, Position p) {
-  // position to index
   return p.r * env->size + p.c;
 }
 
 int get_piece(Checkers *env, Position p) {
   if (!check_in_bounds(env, p)) {
-    return EMPTY; // Return empty for out-of-bounds positions
+    return EMPTY;
   }
   return env->observations[p2i(env, p)];
 }
@@ -136,7 +129,6 @@ int check_in_bounds(Checkers *env, Position p) {
 }
 
 int get_move_direction(Checkers *env, Move m) {
-  // return +1 if the move is visually downwards, -1 otherwise
   return m.to.r > m.from.r ? 1 : -1;
 }
 
@@ -146,7 +138,7 @@ int valid_move_direction(Checkers *env, Move m) {
     return get_move_direction(env, m) == 1 ? 1 : 0;
   if (piece == OPPONENT_PAWN)
     return get_move_direction(env, m) == -1 ? 1 : 0;
-  return 1; // kings can move in any direction
+  return 1;
 }
 
 int is_diagonal_move(Move m) {
@@ -157,7 +149,6 @@ int is_diagonal_move(Move m) {
 int move_size(Move m) { return abs(m.from.r - m.to.r); }
 
 int is_valid_move_no_capture(Checkers *env, Move m) {
-  // Check for invalid move (out of bounds positions)
   if (m.from.r < 0 || m.from.c < 0 || m.to.r < 0 || m.to.c < 0) {
     return 0;
   }
@@ -192,12 +183,52 @@ int is_valid_move_no_capture(Checkers *env, Move m) {
 }
 
 int capture_available(Checkers *env) {
-  int num_possible_moves = env->size * env->size * 8;
-  for (int i = 0; i < num_possible_moves; i++) {
-    Move m = decode_action(env, i);
-    if (is_valid_move_no_capture(env, m) && move_size(m) == 2)
-      return 1;
+  if (env->capture_available_valid) {
+    return env->capture_available_cache;
   }
+  
+  int current_pawn = env->current_player == AGENT ? AGENT_PAWN : OPPONENT_PAWN;
+  int current_king = env->current_player == AGENT ? AGENT_KING : OPPONENT_KING;
+  
+  for (int i = 0; i < env->size * env->size; i++) {
+    int piece = env->observations[i];
+    if (piece != current_pawn && piece != current_king) continue;
+    
+    int r = i / env->size;
+    int c = i % env->size;
+    
+    int directions[4][2] = {{-2, -2}, {-2, 2}, {2, -2}, {2, 2}};
+    for (int d = 0; d < 4; d++) {
+      int new_r = r + directions[d][0];
+      int new_c = c + directions[d][1];
+      
+      if (new_r < 0 || new_r >= env->size || new_c < 0 || new_c >= env->size) continue;
+      
+      if (env->observations[new_r * env->size + new_c] != EMPTY) continue;
+      
+      int mid_r = r + directions[d][0]/2;
+      int mid_c = c + directions[d][1]/2;
+      int mid_piece = env->observations[mid_r * env->size + mid_c];
+      
+      int opponent_pawn = env->current_player == AGENT ? OPPONENT_PAWN : AGENT_PAWN;
+      int opponent_king = env->current_player == AGENT ? OPPONENT_KING : AGENT_KING;
+      
+      if (mid_piece == opponent_pawn || mid_piece == opponent_king) {
+        if (piece == current_pawn) {
+          int move_dir = directions[d][0] > 0 ? 1 : -1;
+          int valid_dir = env->current_player == AGENT ? 1 : -1;
+          if (move_dir != valid_dir) continue;
+        }
+        
+        env->capture_available_cache = 1;
+        env->capture_available_valid = 1;
+        return 1;
+      }
+    }
+  }
+  
+  env->capture_available_cache = 0;
+  env->capture_available_valid = 1;
   return 0;
 }
 
@@ -209,49 +240,143 @@ int is_valid_move(Checkers *env, Move m) {
 
 int num_legal_moves(Checkers *env) {
   int res = 0;
-  int num_possible_moves = env->size * env->size * 8;
-  for (int i = 0; i < num_possible_moves; i++) {
-    Move m = decode_action(env, i);
-    if (is_valid_move(env, m))
+  int current_pawn = env->current_player == AGENT ? AGENT_PAWN : OPPONENT_PAWN;
+  int current_king = env->current_player == AGENT ? AGENT_KING : OPPONENT_KING;
+  int has_captures = capture_available(env);
+  
+  for (int i = 0; i < env->size * env->size; i++) {
+    int piece = env->observations[i];
+    if (piece != current_pawn && piece != current_king) continue;
+    
+    int r = i / env->size;
+    int c = i % env->size;
+    
+    int directions[8][2] = {{-1, -1}, {-1, 1}, {1, -1}, {1, 1}, 
+                           {-2, -2}, {-2, 2}, {2, -2}, {2, 2}};
+    
+    for (int d = 0; d < 8; d++) {
+      int new_r = r + directions[d][0];
+      int new_c = c + directions[d][1];
+      
+      if (new_r < 0 || new_r >= env->size || new_c < 0 || new_c >= env->size) continue;
+      
+      if (env->observations[new_r * env->size + new_c] != EMPTY) continue;
+      
+      int move_size = abs(directions[d][0]);
+      
+      if (has_captures && move_size != 2) continue;
+      
+      if (piece == current_pawn) {
+        int move_dir = directions[d][0] > 0 ? 1 : -1;
+        int valid_dir = env->current_player == AGENT ? 1 : -1;
+        if (move_dir != valid_dir) continue;
+      }
+      
+      if (move_size == 2) {
+        int mid_r = r + directions[d][0]/2;
+        int mid_c = c + directions[d][1]/2;
+        int mid_piece = env->observations[mid_r * env->size + mid_c];
+        
+        int opponent_pawn = env->current_player == AGENT ? OPPONENT_PAWN : AGENT_PAWN;
+        int opponent_king = env->current_player == AGENT ? OPPONENT_KING : AGENT_KING;
+        
+        if (mid_piece != opponent_pawn && mid_piece != opponent_king) continue;
+      }
+      
       res++;
+    }
   }
+  
   return res;
 }
 
 int num_pieces_by_player(Checkers *env, int player) {
-  int res = 0;
-  int player_pawn = player == AGENT ? AGENT_PAWN : OPPONENT_PAWN;
-  int player_king = player == AGENT ? AGENT_KING : OPPONENT_KING;
-  int piece;
-  for (int i = 0; i < env->size * env->size; i++) {
-    piece = env->observations[i];
-    if (piece == player_pawn || piece == player_king)
-      res++;
+  if (player == AGENT) {
+    return env->agent_pieces;
+  } else {
+    return env->opponent_pieces;
   }
-  return res;
 }
 
-void try_make_king(Checkers *env) {
+int try_make_king(Checkers *env) {
+  int promoted = 0;
+  
   for (int i = 0; i < env->size; i++) {
-    if (env->observations[i] == OPPONENT_PAWN)
+    if (env->observations[i] == OPPONENT_PAWN) {
       env->observations[i] = OPPONENT_KING;
+      promoted = 1;
+    }
   }
   for (int i = 0; i < env->size; i++) {
-    if (env->observations[env->size * (env->size - 1) + i] == AGENT_PAWN)
+    if (env->observations[env->size * (env->size - 1) + i] == AGENT_PAWN) {
       env->observations[env->size * (env->size - 1) + i] = AGENT_KING;
+      promoted = 1;
+    }
   }
+  
+  if (promoted) {
+    env->capture_available_valid = 0;
+    env->game_over_valid = 0;
+  }
+  
+  return promoted;
 }
 
 int is_game_over(Checkers *env) {
+  if (env->game_over_valid) {
+    return env->game_over_cache;
+  }
+  
   int current_player_pieces = num_pieces_by_player(env, env->current_player);
   int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
   int other_player_pieces = num_pieces_by_player(env, other_player);
 
-  // Game is over if current player has no pieces (opponent wins)
-  // or if current player has no legal moves (opponent wins)
-  // or if opponent has no pieces (current player wins)
-  return current_player_pieces == 0 || num_legal_moves(env) == 0 ||
-         other_player_pieces == 0;
+  if (current_player_pieces == 0 || other_player_pieces == 0) {
+    env->game_over_cache = 1;
+    env->game_over_valid = 1;
+    return 1;
+  }
+  
+  int has_captures = capture_available(env);
+  if (has_captures) {
+    env->game_over_cache = 0;
+    env->game_over_valid = 1;
+    return 0;
+  }
+  
+  int current_pawn = env->current_player == AGENT ? AGENT_PAWN : OPPONENT_PAWN;
+  int current_king = env->current_player == AGENT ? AGENT_KING : OPPONENT_KING;
+  
+  for (int i = 0; i < env->size * env->size; i++) {
+    int piece = env->observations[i];
+    if (piece != current_pawn && piece != current_king) continue;
+    
+    int r = i / env->size;
+    int c = i % env->size;
+    
+    int directions[4][2] = {{-1, -1}, {-1, 1}, {1, -1}, {1, 1}};
+    for (int d = 0; d < 4; d++) {
+      int new_r = r + directions[d][0];
+      int new_c = c + directions[d][1];
+      
+      if (new_r < 0 || new_r >= env->size || new_c < 0 || new_c >= env->size) continue;
+      if (env->observations[new_r * env->size + new_c] != EMPTY) continue;
+      
+      if (piece == current_pawn) {
+        int move_dir = directions[d][0] > 0 ? 1 : -1;
+        int valid_dir = env->current_player == AGENT ? 1 : -1;
+        if (move_dir != valid_dir) continue;
+      }
+      
+      env->game_over_cache = 0;
+      env->game_over_valid = 1;
+      return 0;
+    }
+  }
+  
+  env->game_over_cache = 1;
+  env->game_over_valid = 1;
+  return 1;
 }
 
 // Helper function to determine who won the game
@@ -259,77 +384,143 @@ int get_winner(Checkers *env) {
   int agent_pieces = num_pieces_by_player(env, AGENT);
   int opponent_pieces = num_pieces_by_player(env, OPPONENT);
 
-  // If agent has no pieces, opponent wins
   if (agent_pieces == 0) {
     return OPPONENT;
   }
 
-  // If opponent has no pieces, agent wins
   if (opponent_pieces == 0) {
     return AGENT;
   }
 
-  // Check if current player has no legal moves (opponent wins)
-  if (num_legal_moves(env) == 0) {
+  if (is_game_over(env)) {
     return env->current_player == AGENT ? OPPONENT : AGENT;
   }
 
-  // Game is not over
   return EMPTY;
 }
 
 void make_move(Checkers *env, int action) {
   Move m = decode_action(env, action);
   if (!is_valid_move(env, m)) {
-    env->rewards[0] += 0.0f; // illegal move penality
-    return;                  // nothing happens if an illegal move is made
+    env->rewards[0] = -1.0f; // Penalty for invalid move
+    return;
   }
+  
   int moving_piece = get_piece(env, m.from);
   env->observations[p2i(env, m.from)] = EMPTY;
   env->observations[p2i(env, m.to)] = moving_piece;
+  
+  // Track if a capture occurred for intermediate reward
+  int capture_occurred = 0;
+  float reward = 0.0f; // Initialize reward accumulator
+  
   if (move_size(m) == 2) {
     Position between_pos =
         (Position){(m.from.r + m.to.r) / 2, (m.from.c + m.to.c) / 2};
+    int captured_piece = env->observations[p2i(env, between_pos)];
     env->observations[p2i(env, between_pos)] = EMPTY;
+    capture_occurred = 1;
+    
+    if (captured_piece == AGENT_PAWN || captured_piece == AGENT_KING) {
+      env->agent_pieces--;
+      reward -= 0.05f; // Small negative reward for losing pieces
+    } else if (captured_piece == OPPONENT_PAWN || captured_piece == OPPONENT_KING) {
+      env->opponent_pieces--;
+    }
   }
+  
+  env->capture_available_valid = 0;
+  env->game_over_valid = 0;
 
-  try_make_king(env);
+  // Track if promotion occurred for intermediate reward
+  int promotion_occurred = try_make_king(env);
 
-  // after a capture if there is another, the player goes again
   if (move_size(m) == 1 || !capture_available(env)) {
     int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
     env->current_player = other_player;
   }
 
-  // Check for game over AFTER player switch and king promotion
+  // Assign intermediate rewards
+  if (capture_occurred && env->current_player == OPPONENT) {
+    // Agent just made a capture, give reward
+    reward += 0.1f; // Small positive reward for capturing
+  } else if (env->current_player == OPPONENT) {
+    // Agent made a successful move (no capture)
+    reward += 0.01f; // Very small positive reward for successful moves
+  }
+  
+  if (promotion_occurred) {
+    // Check if agent was promoted
+    for (int i = 0; i < env->size; i++) {
+      if (env->observations[env->size * (env->size - 1) + i] == AGENT_KING) {
+        reward += 0.05f; // Small reward for promotion
+        break;
+      }
+    }
+  }
+
   if (is_game_over(env)) {
     env->terminals[0] = 1;
     int winner = get_winner(env);
-    env->rewards[0] = winner == AGENT ? 1.0f : -1.0f;
-    return;
+    reward = winner == AGENT ? 1.0f : -1.0f; // Game over rewards override intermediate rewards
   }
+  
+  // Ensure reward stays within bounds
+  env->rewards[0] = clamp(reward, -1.0f, 1.0f);
 }
 
 void scripted_first_move(Checkers *env) {
-  int num_possible_moves = env->size * env->size * 8;
-  for (int i = 0; i < num_possible_moves; i++) {
-    Move m = decode_action(env, i);
-    if (is_valid_move(env, m)) {
-      make_move(env, i);
+  int current_pawn = env->current_player == AGENT ? AGENT_PAWN : OPPONENT_PAWN;
+  int current_king = env->current_player == AGENT ? AGENT_KING : OPPONENT_KING;
+  int has_captures = capture_available(env);
+  
+  for (int i = 0; i < env->size * env->size; i++) {
+    int piece = env->observations[i];
+    if (piece != current_pawn && piece != current_king) continue;
+    
+    int r = i / env->size;
+    int c = i % env->size;
+    
+    int directions[8][2] = {{-1, -1}, {-1, 1}, {1, -1}, {1, 1}, 
+                           {-2, -2}, {-2, 2}, {2, -2}, {2, 2}};
+    
+    for (int d = 0; d < 8; d++) {
+      int new_r = r + directions[d][0];
+      int new_c = c + directions[d][1];
+      
+      if (new_r < 0 || new_r >= env->size || new_c < 0 || new_c >= env->size) continue;
+      if (env->observations[new_r * env->size + new_c] != EMPTY) continue;
+      
+      int move_size = abs(directions[d][0]);
+      
+      if (has_captures && move_size != 2) continue;
+      
+      if (piece == current_pawn) {
+        int move_dir = directions[d][0] > 0 ? 1 : -1;
+        int valid_dir = env->current_player == AGENT ? 1 : -1;
+        if (move_dir != valid_dir) continue;
+      }
+      
+      if (move_size == 2) {
+        int mid_r = r + directions[d][0]/2;
+        int mid_c = c + directions[d][1]/2;
+        int mid_piece = env->observations[mid_r * env->size + mid_c];
+        
+        int opponent_pawn = env->current_player == AGENT ? OPPONENT_PAWN : AGENT_PAWN;
+        int opponent_king = env->current_player == AGENT ? OPPONENT_KING : AGENT_KING;
+        
+        if (mid_piece != opponent_pawn && mid_piece != opponent_king) continue;
+      }
+      
+      int action = i * 8 + d;
+      make_move(env, action);
       return;
     }
   }
 }
 
 void scripted_random_move(Checkers *env) {
-  int num_possible_moves = env->size * env->size * 8;
-  for (int i = 0; i < num_possible_moves; i++) {
-    Move m = decode_action(env, i);
-    if (is_valid_move(env, m)) {
-      make_move(env, i);
-      return;
-    }
-  }
+  scripted_first_move(env);
 }
 
 void scripted_step(Checkers *env, int difficulty) {
@@ -360,7 +551,6 @@ void c_reset(Checkers *env) {
   env->terminals[0] = 0;
   env->rewards[0] = 0.0f;
 
-  // Initialize board
   int tiles = env->size * env->size;
   for (int i = 0; i < tiles; i++)
     env->observations[i] = EMPTY;
@@ -378,6 +568,8 @@ void c_reset(Checkers *env) {
   }
 
   env->current_player = AGENT;
+  
+  update_piece_counts(env);
 }
 
 // Required function
@@ -520,4 +712,21 @@ void c_close(Checkers *env) {
   if (IsWindowReady()) {
     CloseWindow();
   }
+}
+
+void update_piece_counts(Checkers *env) {
+  env->agent_pieces = 0;
+  env->opponent_pieces = 0;
+  
+  for (int i = 0; i < env->size * env->size; i++) {
+    int piece = env->observations[i];
+    if (piece == AGENT_PAWN || piece == AGENT_KING) {
+      env->agent_pieces++;
+    } else if (piece == OPPONENT_PAWN || piece == OPPONENT_KING) {
+      env->opponent_pieces++;
+    }
+  }
+  
+  env->capture_available_valid = 0;
+  env->game_over_valid = 0;
 }
