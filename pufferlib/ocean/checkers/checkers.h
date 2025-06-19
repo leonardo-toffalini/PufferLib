@@ -149,10 +149,10 @@ int valid_move_direction(Checkers *env, Move m) {
   return 1; // kings can move in any direction
 }
 
-int is_diagonal_move(Move m) { 
+int is_diagonal_move(Move m) {
   int dr = m.to.r - m.from.r;
   int dc = m.to.c - m.from.c;
-  return (dr == dc) || (dr == -dc); 
+  return (dr == dc) || (dr == -dc);
 }
 int move_size(Move m) { return abs(m.from.r - m.to.r); }
 
@@ -161,7 +161,7 @@ int is_valid_move_no_capture(Checkers *env, Move m) {
   if (m.from.r < 0 || m.from.c < 0 || m.to.r < 0 || m.to.c < 0) {
     return 0;
   }
-  
+
   if (!check_in_bounds(env, m.from) || !check_in_bounds(env, m.to))
     return 0;
 
@@ -181,8 +181,7 @@ int is_valid_move_no_capture(Checkers *env, Move m) {
     return 0;
 
   if (move_size(m) == 2) {
-    int other_player =
-        env->current_player == AGENT ? OPPONENT : AGENT;
+    int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
     Position between_pos =
         (Position){(m.from.r + m.to.r) / 2, (m.from.c + m.to.c) / 2};
     if (get_piece_type(env, between_pos) != other_player)
@@ -247,12 +246,11 @@ int is_game_over(Checkers *env) {
   int current_player_pieces = num_pieces_by_player(env, env->current_player);
   int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
   int other_player_pieces = num_pieces_by_player(env, other_player);
-  
+
   // Game is over if current player has no pieces (opponent wins)
   // or if current player has no legal moves (opponent wins)
   // or if opponent has no pieces (current player wins)
-  return current_player_pieces == 0 || 
-         num_legal_moves(env) == 0 ||
+  return current_player_pieces == 0 || num_legal_moves(env) == 0 ||
          other_player_pieces == 0;
 }
 
@@ -260,22 +258,22 @@ int is_game_over(Checkers *env) {
 int get_winner(Checkers *env) {
   int agent_pieces = num_pieces_by_player(env, AGENT);
   int opponent_pieces = num_pieces_by_player(env, OPPONENT);
-  
+
   // If agent has no pieces, opponent wins
   if (agent_pieces == 0) {
     return OPPONENT;
   }
-  
+
   // If opponent has no pieces, agent wins
   if (opponent_pieces == 0) {
     return AGENT;
   }
-  
+
   // Check if current player has no legal moves (opponent wins)
   if (num_legal_moves(env) == 0) {
     return env->current_player == AGENT ? OPPONENT : AGENT;
   }
-  
+
   // Game is not over
   return EMPTY;
 }
@@ -299,14 +297,12 @@ void make_move(Checkers *env, int action) {
 
   // after a capture if there is another, the player goes again
   if (move_size(m) == 1 || !capture_available(env)) {
-    int other_player =
-        env->current_player == AGENT ? OPPONENT : AGENT;
+    int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
     env->current_player = other_player;
   }
 
   // Check for game over AFTER player switch and king promotion
   if (is_game_over(env)) {
-    printf("game over\n");
     env->terminals[0] = 1;
     int winner = get_winner(env);
     env->rewards[0] = winner == AGENT ? 1.0f : -1.0f;
@@ -363,7 +359,7 @@ void c_reset(Checkers *env) {
   env->tick = 0;
   env->terminals[0] = 0;
   env->rewards[0] = 0.0f;
-  
+
   // Initialize board
   int tiles = env->size * env->size;
   for (int i = 0; i < tiles; i++)
@@ -380,7 +376,7 @@ void c_reset(Checkers *env) {
         env->observations[i * env->size + j] = OPPONENT_PAWN;
     }
   }
-  
+
   env->current_player = AGENT;
 }
 
