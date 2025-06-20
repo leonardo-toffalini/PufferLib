@@ -1,4 +1,7 @@
+#pragma once
+
 #include "raylib.h"
+#include <_stdlib.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,10 +15,6 @@ const unsigned char AGENT_PAWN = 1;
 const unsigned char AGENT_KING = 2;
 const unsigned char OPPONENT_PAWN = 3;
 const unsigned char OPPONENT_KING = 4;
-
-float clamp(float x, float low, float high) {
-  return fminf(high, fmaxf(low, x));
-}
 
 // Required struct. Only use floats!
 typedef struct {
@@ -54,6 +53,10 @@ typedef struct {
   Position from;
   Position to;
 } Move;
+
+float clamp(float val, float low, float high) {
+  return fmin(fmax(val, low), high);
+}
 
 Move decode_action(Checkers *env, int action) {
   int num_move_types = 8;
@@ -106,6 +109,10 @@ Move decode_action(Checkers *env, int action) {
 
 int p2i(Checkers *env, Position p) { return p.r * env->size + p.c; }
 
+int check_in_bounds(Checkers *env, Position p) {
+  return 0 <= p.r && p.r < env->size && 0 <= p.c && p.c < env->size;
+}
+
 int get_piece(Checkers *env, Position p) {
   if (!check_in_bounds(env, p)) {
     return EMPTY;
@@ -120,10 +127,6 @@ int get_piece_type(Checkers *env, Position p) {
   if (piece == OPPONENT_PAWN || piece == OPPONENT_KING)
     return OPPONENT;
   return EMPTY;
-}
-
-int check_in_bounds(Checkers *env, Position p) {
-  return 0 <= p.r && p.r < env->size && 0 <= p.c && p.c < env->size;
 }
 
 int get_move_direction(Checkers *env, Move m) {
@@ -553,7 +556,6 @@ float evaluate_position(Checkers *env) {
   for (int i = 0; i < env->size * env->size; i++) {
     int piece = env->observations[i];
     int r = i / env->size;
-    int c = i % env->size;
 
     if (piece == AGENT_PAWN) {
       score += 1.0f + (r * 0.1f); // Pawns are worth more as they advance
@@ -569,85 +571,16 @@ float evaluate_position(Checkers *env) {
   return score;
 }
 
-// Helper function to check if a move leads to immediate capture opportunity for
-// opponent
-int move_leads_to_capture(Checkers *env, Move m) {
-  // Temporarily make the move
-  int moving_piece = get_piece(env, m.from);
-  env->observations[p2i(env, m.from)] = EMPTY;
-  env->observations[p2i(env, m.to)] = moving_piece;
-
-  if (move_size(m) == 2) {
-    Position between_pos =
-        (Position){(m.from.r + m.to.r) / 2, (m.from.c + m.to.c) / 2};
-    env->observations[p2i(env, between_pos)] = EMPTY;
-  }
-
-  // Check if opponent can capture this piece
-  int current_player_backup = env->current_player;
-  env->current_player = env->current_player == AGENT ? OPPONENT : AGENT;
-
-  int can_be_captured = 0;
-  for (int i = 0; i < env->size * env->size; i++) {
-    int piece = env->observations[i];
-    if (piece == EMPTY)
-      continue;
-
-    int r = i / env->size;
-    int c = i % env->size;
-
-    // Check if this piece can capture the moved piece
-    int directions[4][2] = {{-2, -2}, {-2, 2}, {2, -2}, {2, 2}};
-    for (int d = 0; d < 4; d++) {
-      int new_r = r + directions[d][0];
-      int new_c = c + directions[d][1];
-
-      if (new_r == m.to.r && new_c == m.to.c) {
-        int mid_r = r + directions[d][0] / 2;
-        int mid_c = c + directions[d][1] / 2;
-        int mid_piece = env->observations[mid_r * env->size + mid_c];
-
-        if (mid_piece == moving_piece) {
-          can_be_captured = 1;
-          break;
-        }
-      }
-    }
-    if (can_be_captured)
-      break;
-  }
-
-  // Restore the board
-  env->observations[p2i(env, m.from)] = moving_piece;
-  env->observations[p2i(env, m.to)] = EMPTY;
-
-  if (move_size(m) == 2) {
-    Position between_pos =
-        (Position){(m.from.r + m.to.r) / 2, (m.from.c + m.to.c) / 2};
-    int captured_piece =
-        env->current_player == AGENT ? OPPONENT_PAWN : AGENT_PAWN;
-    env->observations[p2i(env, between_pos)] = captured_piece;
-  }
-
-  env->current_player = current_player_backup;
-  return can_be_captured;
-}
-
-// Helper function to get all valid moves for current player
-typedef struct {
-  Move moves[100];
-  int count;
-} MoveList;
-
-MoveList get_all_valid_moves(Checkers *env) {
-  MoveList moves;
-  moves.count = 0;
-
+void scripted_random_move(Checkers *env) {
   int current_pawn = env->current_player == AGENT ? AGENT_PAWN : OPPONENT_PAWN;
   int current_king = env->current_player == AGENT ? AGENT_KING : OPPONENT_KING;
   int has_captures = capture_available(env);
 
-  for (int i = 0; i < env->size * env->size; i++) {
+  srand(time(NULL));
+  int i;
+  int num_positions = env->size * env->size;
+  while (1) {
+    i = random() % num_positions;
     int piece = env->observations[i];
     if (piece != current_pawn && piece != current_king)
       continue;
@@ -693,220 +626,12 @@ MoveList get_all_valid_moves(Checkers *env) {
           continue;
       }
 
-      Move m;
-      m.from.r = r;
-      m.from.c = c;
-      m.to.r = new_r;
-      m.to.c = new_c;
-
-      if (moves.count < 100) {
-        moves.moves[moves.count] = m;
-        moves.count++;
-      }
+      int action = i * 8 + d;
+      make_move(env, action);
+      return;
     }
-  }
-
-  return moves;
-}
-
-// Helper function to evaluate a move
-float evaluate_move(Checkers *env, Move m) {
-  float score = 0.0f;
-
-  // Prioritize captures
-  if (move_size(m) == 2) {
-    score += 10.0f;
-  }
-
-  // Prioritize king moves (they're more valuable)
-  int piece = get_piece(env, m.from);
-  if (piece == AGENT_KING || piece == OPPONENT_KING) {
-    score += 2.0f;
-  }
-
-  // Prefer moves that advance pawns toward promotion
-  if (piece == AGENT_PAWN && env->current_player == AGENT) {
-    score += (m.to.r - m.from.r) * 0.5f; // Moving forward is good
-  } else if (piece == OPPONENT_PAWN && env->current_player == OPPONENT) {
-    score += (m.from.r - m.to.r) * 0.5f; // Moving forward is good
-  }
-
-  // Prefer center control
-  int center_distance_from =
-      abs(m.from.r - env->size / 2) + abs(m.from.c - env->size / 2);
-  int center_distance_to =
-      abs(m.to.r - env->size / 2) + abs(m.to.c - env->size / 2);
-  score += (center_distance_from - center_distance_to) * 0.1f;
-
-  // Avoid moves that lead to immediate capture
-  if (move_leads_to_capture(env, m)) {
-    score -= 5.0f;
-  }
-
-  // Prefer moves that protect pieces
-  if (piece == AGENT_PAWN || piece == AGENT_KING) {
-    // Check if this move protects other pieces
-    int directions[4][2] = {{-1, -1}, {-1, 1}, {1, -1}, {1, 1}};
-    for (int d = 0; d < 4; d++) {
-      int protect_r = m.to.r + directions[d][0];
-      int protect_c = m.to.c + directions[d][1];
-
-      if (protect_r >= 0 && protect_r < env->size && protect_c >= 0 &&
-          protect_c < env->size) {
-        int protected_piece =
-            env->observations[protect_r * env->size + protect_c];
-        if (protected_piece == AGENT_PAWN || protected_piece == AGENT_KING) {
-          score += 0.5f;
-        }
-      }
-    }
-  }
-
-  return score;
-}
-
-void scripted_strong_move(Checkers *env) {
-  MoveList moves = get_all_valid_moves(env);
-
-  if (moves.count == 0)
-    return;
-
-  // Find the best move
-  float best_score = -1000.0f;
-  Move best_move = moves.moves[0];
-
-  for (int i = 0; i < moves.count; i++) {
-    float score = evaluate_move(env, moves.moves[i]);
-    if (score > best_score) {
-      best_score = score;
-      best_move = moves.moves[i];
-    }
-  }
-
-  // Convert move to action
-  int from_pos = p2i(env, best_move.from);
-  int to_pos = p2i(env, best_move.to);
-
-  int dr = best_move.to.r - best_move.from.r;
-  int dc = best_move.to.c - best_move.from.c;
-
-  int move_type = -1;
-  if (dr == -1 && dc == -1)
-    move_type = 0;
-  else if (dr == -1 && dc == 1)
-    move_type = 1;
-  else if (dr == 1 && dc == -1)
-    move_type = 2;
-  else if (dr == 1 && dc == 1)
-    move_type = 3;
-  else if (dr == -2 && dc == -2)
-    move_type = 4;
-  else if (dr == -2 && dc == 2)
-    move_type = 5;
-  else if (dr == 2 && dc == -2)
-    move_type = 6;
-  else if (dr == 2 && dc == 2)
-    move_type = 7;
-
-  if (move_type >= 0) {
-    int action = from_pos * 8 + move_type;
-    make_move(env, action);
   }
 }
-
-void scripted_expert_move(Checkers *env) {
-  // Expert level: look ahead one move and consider opponent's best response
-  MoveList moves = get_all_valid_moves(env);
-
-  if (moves.count == 0)
-    return;
-
-  float best_score = -1000.0f;
-  Move best_move = moves.moves[0];
-
-  for (int i = 0; i < moves.count; i++) {
-    // Temporarily make this move
-    int moving_piece = get_piece(env, moves.moves[i].from);
-    env->observations[p2i(env, moves.moves[i].from)] = EMPTY;
-    env->observations[p2i(env, moves.moves[i].to)] = moving_piece;
-
-    if (move_size(moves.moves[i]) == 2) {
-      Position between_pos =
-          (Position){(moves.moves[i].from.r + moves.moves[i].to.r) / 2,
-                     (moves.moves[i].from.c + moves.moves[i].to.c) / 2};
-      env->observations[p2i(env, between_pos)] = EMPTY;
-    }
-
-    // Switch to opponent's turn
-    int current_player_backup = env->current_player;
-    env->current_player = env->current_player == AGENT ? OPPONENT : AGENT;
-
-    // Find opponent's best move
-    MoveList opponent_moves = get_all_valid_moves(env);
-    float opponent_best_score = -1000.0f;
-
-    for (int j = 0; j < opponent_moves.count; j++) {
-      float score = evaluate_move(env, opponent_moves.moves[j]);
-      if (score > opponent_best_score) {
-        opponent_best_score = score;
-      }
-    }
-
-    // Restore board
-    env->observations[p2i(env, moves.moves[i].from)] = moving_piece;
-    env->observations[p2i(env, moves.moves[i].to)] = EMPTY;
-
-    if (move_size(moves.moves[i]) == 2) {
-      Position between_pos =
-          (Position){(moves.moves[i].from.r + moves.moves[i].to.r) / 2,
-                     (moves.moves[i].from.c + moves.moves[i].to.c) / 2};
-      int captured_piece =
-          current_player_backup == AGENT ? OPPONENT_PAWN : AGENT_PAWN;
-      env->observations[p2i(env, between_pos)] = captured_piece;
-    }
-
-    env->current_player = current_player_backup;
-
-    // Score this move based on position after opponent's best response
-    float move_score =
-        evaluate_move(env, moves.moves[i]) - opponent_best_score * 0.5f;
-
-    if (move_score > best_score) {
-      best_score = move_score;
-      best_move = moves.moves[i];
-    }
-  }
-
-  // Convert move to action
-  int from_pos = p2i(env, best_move.from);
-  int dr = best_move.to.r - best_move.from.r;
-  int dc = best_move.to.c - best_move.from.c;
-
-  int move_type = -1;
-  if (dr == -1 && dc == -1)
-    move_type = 0;
-  else if (dr == -1 && dc == 1)
-    move_type = 1;
-  else if (dr == 1 && dc == -1)
-    move_type = 2;
-  else if (dr == 1 && dc == 1)
-    move_type = 3;
-  else if (dr == -2 && dc == -2)
-    move_type = 4;
-  else if (dr == -2 && dc == 2)
-    move_type = 5;
-  else if (dr == 2 && dc == -2)
-    move_type = 6;
-  else if (dr == 2 && dc == 2)
-    move_type = 7;
-
-  if (move_type >= 0) {
-    int action = from_pos * 8 + move_type;
-    make_move(env, action);
-  }
-}
-
-void scripted_random_move(Checkers *env) { scripted_first_move(env); }
 
 void scripted_step(Checkers *env, int difficulty) {
   switch (difficulty) {
@@ -941,7 +666,7 @@ void update_piece_counts(Checkers *env) {
 
 void add_log(Checkers *env) {
   env->log.perf += (env->rewards[0] > 0) ? 1 : 0;
-  env->log.score += env->rewards[0];
+  env->log.score += evaluate_position(env);
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
   env->log.n += 1;
