@@ -442,7 +442,7 @@ void make_move(Checkers *env, int action) {
 
     if (captured_piece == AGENT_PAWN || captured_piece == AGENT_KING) {
       env->agent_pieces--;
-      reward -= 0.05f; // Small negative reward for losing pieces
+      reward -= 0.0f; // 0.05f; // Small negative reward for losing pieces
     } else if (captured_piece == OPPONENT_PAWN ||
                captured_piece == OPPONENT_KING) {
       env->opponent_pieces--;
@@ -463,17 +463,17 @@ void make_move(Checkers *env, int action) {
   // Assign intermediate rewards
   if (capture_occurred && env->current_player == OPPONENT) {
     // Agent just made a capture, give reward
-    reward += 0.1f; // Small positive reward for capturing
+    reward += 0.0f; // 0.1f; // Small positive reward for capturing
   } else if (env->current_player == OPPONENT) {
     // Agent made a successful move (no capture)
-    reward += 0.01f; // Very small positive reward for successful moves
+    reward += 0.0f; // 0.01f; // Very small positive reward for successful moves
   }
 
   if (promotion_occurred) {
     // Check if agent was promoted
     for (int i = 0; i < env->size; i++) {
       if (env->observations[env->size * (env->size - 1) + i] == AGENT_KING) {
-        reward += 0.05f; // Small reward for promotion
+        reward += 0.0f; // 0.05f; // Small reward for promotion
         break;
       }
     }
@@ -670,7 +670,7 @@ void add_log(Checkers *env) {
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
   if (env->terminals[0] == 1)
-    env->log.winrate += get_winner(env) == AGENT ? 1.0f : -1.0f;
+    env->log.winrate += get_winner(env) == AGENT ? 1.0f : 0.0f;
   env->log.n += 1;
 }
 
