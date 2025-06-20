@@ -1,7 +1,6 @@
 #pragma once
 
 #include "raylib.h"
-#include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +21,7 @@ typedef struct {
   float score;
   float episode_return;
   float episode_length;
+  float winrate;
   float n;
 } Log;
 
@@ -669,6 +669,8 @@ void add_log(Checkers *env) {
   env->log.score += evaluate_position(env);
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
+  if (env->terminals[0] == 1)
+    env->log.winrate += get_winner(env) == AGENT ? 1.0f : -1.0f;
   env->log.n += 1;
 }
 
