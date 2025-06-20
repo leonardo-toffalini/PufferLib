@@ -150,10 +150,6 @@ int is_diagonal_move(Move m) {
 int move_size(Move m) { return abs(m.from.r - m.to.r); }
 
 int is_valid_move_no_capture(Checkers *env, Move m) {
-  if (m.from.r < 0 || m.from.c < 0 || m.to.r < 0 || m.to.c < 0) {
-    return 0;
-  }
-
   if (!check_in_bounds(env, m.from) || !check_in_bounds(env, m.to))
     return 0;
 
@@ -220,12 +216,10 @@ int capture_available(Checkers *env) {
           env->current_player == AGENT ? OPPONENT_KING : AGENT_KING;
 
       if (mid_piece == opponent_pawn || mid_piece == opponent_king) {
-        if (piece == current_pawn) {
-          int move_dir = directions[d][0] > 0 ? 1 : -1;
-          int valid_dir = env->current_player == AGENT ? 1 : -1;
-          if (move_dir != valid_dir)
-            continue;
-        }
+        int move_dir = directions[d][0] > 0 ? 1 : -1;
+        int valid_dir = env->current_player == AGENT ? 1 : -1;
+        if (move_dir != valid_dir)
+          continue;
 
         env->capture_available_cache = 1;
         env->capture_available_valid = 1;
@@ -398,16 +392,12 @@ int is_game_over(Checkers *env) {
   return 1;
 }
 
-// Helper function to determine who won the game
 int get_winner(Checkers *env) {
-  int agent_pieces = num_pieces_by_player(env, AGENT);
-  int opponent_pieces = num_pieces_by_player(env, OPPONENT);
-
-  if (agent_pieces == 0) {
+  if (env->agent_pieces == 0) {
     return OPPONENT;
   }
 
-  if (opponent_pieces == 0) {
+  if (env->opponent_pieces == 0) {
     return AGENT;
   }
 
@@ -421,7 +411,7 @@ int get_winner(Checkers *env) {
 void make_move(Checkers *env, int action) {
   Move m = decode_action(env, action);
   if (!is_valid_move(env, m)) {
-    env->rewards[0] = -1.0f; // Penalty for invalid move
+    env->rewards[0] = -1.0f; // reward for invalid move
     return;
   }
 
@@ -429,9 +419,8 @@ void make_move(Checkers *env, int action) {
   env->observations[p2i(env, m.from)] = EMPTY;
   env->observations[p2i(env, m.to)] = moving_piece;
 
-  // Track if a capture occurred for intermediate reward
   int capture_occurred = 0;
-  float reward = 0.0f; // Initialize reward accumulator
+  float reward = 0.0f;
 
   if (move_size(m) == 2) {
     Position between_pos =
@@ -442,7 +431,7 @@ void make_move(Checkers *env, int action) {
 
     if (captured_piece == AGENT_PAWN || captured_piece == AGENT_KING) {
       env->agent_pieces--;
-      reward -= 0.0f; // 0.05f; // Small negative reward for losing pieces
+      reward -= 0.05f; // reward for losing pieces
     } else if (captured_piece == OPPONENT_PAWN ||
                captured_piece == OPPONENT_KING) {
       env->opponent_pieces--;
@@ -452,28 +441,23 @@ void make_move(Checkers *env, int action) {
   env->capture_available_valid = 0;
   env->game_over_valid = 0;
 
-  // Track if promotion occurred for intermediate reward
   int promotion_occurred = try_make_king(env);
+
+  if (capture_occurred && env->current_player == OPPONENT) {
+    reward += 0.1f; // reward for capturing
+  } else if (env->current_player == AGENT) {
+    reward += 0.01f; // reward for successful moves
+  }
 
   if (move_size(m) == 1 || !capture_available(env)) {
     int other_player = env->current_player == AGENT ? OPPONENT : AGENT;
     env->current_player = other_player;
   }
 
-  // Assign intermediate rewards
-  if (capture_occurred && env->current_player == OPPONENT) {
-    // Agent just made a capture, give reward
-    reward += 0.0f; // 0.1f; // Small positive reward for capturing
-  } else if (env->current_player == OPPONENT) {
-    // Agent made a successful move (no capture)
-    reward += 0.0f; // 0.01f; // Very small positive reward for successful moves
-  }
-
   if (promotion_occurred) {
-    // Check if agent was promoted
     for (int i = 0; i < env->size; i++) {
       if (env->observations[env->size * (env->size - 1) + i] == AGENT_KING) {
-        reward += 0.0f; // 0.05f; // Small reward for promotion
+        reward += 0.05f; // reward for promotion
         break;
       }
     }
@@ -482,12 +466,9 @@ void make_move(Checkers *env, int action) {
   if (is_game_over(env)) {
     env->terminals[0] = 1;
     int winner = get_winner(env);
-    reward = winner == AGENT
-                 ? 1.0f
-                 : -1.0f; // Game over rewards override intermediate rewards
+    reward = winner == AGENT ? 1.0f : -1.0f;
   }
 
-  // Ensure reward stays within bounds
   env->rewards[0] = clamp(reward, -1.0f, 1.0f);
 }
 
@@ -560,7 +541,7 @@ float evaluate_position(Checkers *env) {
     if (piece == AGENT_PAWN) {
       score += 1.0f + (r * 0.1f); // Pawns are worth more as they advance
     } else if (piece == AGENT_KING) {
-      score += 2.0f; // Kings are worth more
+      score += 2.0f;
     } else if (piece == OPPONENT_PAWN) {
       score -= 1.0f + ((env->size - 1 - r) * 0.1f);
     } else if (piece == OPPONENT_KING) {
