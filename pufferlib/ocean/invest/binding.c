@@ -1,0 +1,14 @@
+#include "invest.h"
+
+#define Env Template
+#include "../env_binding.h"
+
+static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
+  env->T = unpack(kwargs, "T");
+  return 0;
+}
+
+static int my_log(PyObject *dict, Log *log) {
+  assign_to_dict(dict, "score", log->score);
+  return 0;
+}
