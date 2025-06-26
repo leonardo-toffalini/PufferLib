@@ -87,8 +87,7 @@ void box_muller(double *out1, double *out2) {
 double r_k(double H, int k) {
   if (k == 0)
     return 1.0;
-  return 0.5 *
-         (pow(k + 1, 2 * H) - 2 * pow(k, 2 * H) + pow(fabs(k - 1), 2 * H));
+  return 0.5 * (pow(k + 1, 2 * H) - 2 * pow(k, 2 * H) + pow(abs(k - 1), 2 * H));
 }
 
 // Fractional Brownian motion generator

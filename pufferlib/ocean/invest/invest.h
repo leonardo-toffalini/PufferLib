@@ -5,7 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef PI
 #define PI 3.14159265358979323846
+#endif
 #define MAX_TIME_HORIZON 1000 // Define a reasonable maximum time horizon
 
 typedef struct {
@@ -30,22 +32,26 @@ typedef struct {
   float riskless;
   float risky;
   double *prices;
-  float riskless_history[MAX_TIME_HORIZON + 1];
-  float risky_history[MAX_TIME_HORIZON + 1];
+  float *riskless_history;
+  float *risky_history;
 
   int tick;
 } Invest;
 
 void add_log(Invest *env) {
   env->log.perf += (env->rewards[0] > 0) ? 1 : 0;
-  env->log.score += env->rewards[0];
+  env->log.score += env->rewards[0] > 0 ? 1 : 0;
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
   env->log.n++;
 }
 
-float sin_price_function(Invest *env) {
-  return sin(2 * PI * env->tick / (float)env->T) + 1;
+double *sin_process(Invest *env) {
+  double *process = malloc((env->T + 1) * sizeof(double));
+  for (int i = 0; i < env->T + 1; i++) {
+    process[i] = sin(2 * PI * i / env->T);
+  }
+  return process;
 }
 
 // Required function
@@ -61,26 +67,29 @@ void c_reset(Invest *env) {
   env->riskless = 0;
   env->risky = 0;
 
-  // for (int i = 0; i <= env->T; i++) {
-  //   env->tick++;
-  //   env->prices.push_back(sin_price_function(env));
-  // }
+  // simulate_fBm(env->H, env->T, env->T);
+  env->prices = sin_process(env);
+  if (env->riskless_history == NULL)
+    env->riskless_history = malloc((env->T + 1) * sizeof(float));
+  if (env->risky_history == NULL)
+    env->risky_history = malloc((env->T + 1) * sizeof(float));
 
-  if (env->prices != NULL)
-    free(env->prices);
-  env->prices = simulate_fBm(env->H, env->T, env->T);
+  memset(env->riskless_history, 0, sizeof(*env->riskless_history));
+  memset(env->risky_history, 0, sizeof(*env->risky_history));
 
   env->tick = 0;
+}
 
-  // Initialize asset histories, replace with memset 0
-  for (int i = 0; i <= env->T; i++) {
-    env->riskless_history[i] = 0;
-    env->risky_history[i] = 0;
-  }
+void compute_observations(Invest *env) {
+  int obs_idx = 0;
+  env->observations[obs_idx++] = env->T - env->tick;
+  env->observations[obs_idx++] = env->prices[env->tick];
+  env->observations[obs_idx++] = env->riskless;
+  env->observations[obs_idx++] = env->risky;
 }
 
 void c_step(Invest *env) {
-  int action = env->actions[0];
+  int action = env->actions[0] - 10;
 
   env->terminals[0] = 0;
   env->rewards[0] = 0;
@@ -88,18 +97,20 @@ void c_step(Invest *env) {
   float price = env->prices[env->tick];
   env->risky += action;
   env->riskless -= action * price;
-  env->rewards[0] = env->riskless + env->risky * price;
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
 
   if (env->tick >= env->T) {
+    env->rewards[0] = env->riskless;
     env->terminals[0] = 1;
     add_log(env);
     c_reset(env);
   }
 
   env->tick += 1;
+
+  compute_observations(env);
 }
 
 // Required function. Should handle creating the client on first call
@@ -112,8 +123,9 @@ void c_render(Invest *env) {
   const int graph_height = screen_height - 2 * margin;
 
   if (!window_initialized) {
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(screen_width, screen_height, "Investment Simulation");
-    SetTargetFPS(60);
+    SetTargetFPS(30);
     window_initialized = true;
   }
 
@@ -200,13 +212,12 @@ void c_render(Invest *env) {
   }
 
   // Draw current values
-  char value_text[100];
-  sprintf(value_text, "Price: %.2f", env->prices[env->tick]);
-  DrawText(value_text, screen_width - 200, margin - 20, 20, price_color);
-  sprintf(value_text, "Riskless: %.2f", env->riskless);
-  DrawText(value_text, screen_width - 200, margin, 20, riskless_color);
-  sprintf(value_text, "Risky: %.2f", env->risky);
-  DrawText(value_text, screen_width - 200, margin + 20, 20, risky_color);
+  DrawText(TextFormat("Price: %.2f", env->prices[env->tick]),
+           screen_width - 200, margin - 20, 20, price_color);
+  DrawText(TextFormat("Riskless: %.2f", env->riskless), screen_width - 200,
+           margin, 20, riskless_color);
+  DrawText(TextFormat("Risky: %.2f", env->risky), screen_width - 200,
+           margin + 20, 20, risky_color);
 
   EndDrawing();
 }
@@ -215,6 +226,8 @@ void c_render(Invest *env) {
 // Do not free env->observations, actions, rewards, terminals
 void c_close(Invest *env) {
   free(env->prices);
+  free(env->riskless_history);
+  free(env->risky_history);
   if (IsWindowReady()) {
     CloseWindow();
   }
