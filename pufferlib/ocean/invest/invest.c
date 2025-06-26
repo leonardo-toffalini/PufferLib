@@ -1,8 +1,8 @@
 #include "invest.h"
 
 int main() {
-  Invest env = {.T = 100};
-  env.observations = (unsigned char *)calloc(1, sizeof(unsigned char));
+  Invest env = {.T = 100, .H = 0.1};
+  env.observations = (float *)calloc(1, sizeof(float));
   env.actions = (int *)calloc(1, sizeof(int));
   env.rewards = (float *)calloc(1, sizeof(float));
   env.terminals = (unsigned char *)calloc(1, sizeof(unsigned char));
@@ -19,7 +19,7 @@ int main() {
         env.actions[0] = -1;
       }
     } else {
-      env.actions[0] = rand() % 2;
+      env.actions[0] = rand() % 11 - 5;
     }
     c_step(&env);
     c_render(&env);

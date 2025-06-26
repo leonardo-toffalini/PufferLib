@@ -5,7 +5,7 @@ import pufferlib
 from pufferlib.ocean.invest import binding
 
 class Invest(pufferlib.PufferEnv):
-    def __init__(self, num_envs=1, render_mode=None, log_interval=128, T=100, buf=None, seed=0):
+    def __init__(self, num_envs=1, render_mode=None, log_interval=128, T=100, H=0.1, buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
             shape=(1,), dtype=np.uint8)
         self.single_action_space = gymnasium.spaces.Discrete(2)
@@ -14,7 +14,7 @@ class Invest(pufferlib.PufferEnv):
 
         super().__init__(buf)
         self.c_envs = binding.vec_init(self.observations, self.actions, self.rewards,
-            self.terminals, self.truncations, num_envs, seed, T=T)
+            self.terminals, self.truncations, num_envs, seed, T=T, H=H)
         self.size = size
  
     def reset(self, seed=0):
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     steps = 0
 
     CACHE = 1024
-    actions = np.random.randint(0, 5, (CACHE, N))
+    actions = np.random.randint(-5, 5, (CACHE, N))
 
     import time
     start = time.time()

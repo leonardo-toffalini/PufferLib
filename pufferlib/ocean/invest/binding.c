@@ -5,6 +5,7 @@
 
 static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
   env->T = unpack(kwargs, "T");
+  env->H = unpack(kwargs, "H");
   return 0;
 }
 
