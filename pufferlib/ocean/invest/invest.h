@@ -27,6 +27,7 @@ typedef struct {
   // env specific
   int T;
   float H;
+  int process_type;
   int window_size;
   float riskless;
   float risky;
@@ -68,7 +69,11 @@ void c_reset(Invest *env) {
   env->risky = 0;
 
   // simulate_fBm(env->H, env->T, env->T);
-  env->prices = sin_process(env);
+  if (env->process_type == 0)
+    env->prices = sin_process(env);
+  else
+    env->prices = simulate_fBm(env->H, env->T, env->T);
+
   if (env->riskless_history == NULL)
     env->riskless_history = malloc((env->T + 1) * sizeof(float));
   if (env->risky_history == NULL)
@@ -94,7 +99,7 @@ void c_step(Invest *env) {
   env->risky_history[env->tick] = env->risky;
 
   if (env->tick >= env->T) {
-    env->rewards[0] = env->riskless + price * env->risky;
+    env->rewards[0] = env->riskless;
     env->terminals[0] = 1;
     add_log(env);
     c_reset(env);
@@ -127,6 +132,9 @@ void c_render(Invest *env) {
   BeginDrawing();
   Color dark_bg = (Color){20, 20, 20, 255};
   ClearBackground(dark_bg);
+
+  if (env->rewards[0] != 0)
+    printf("reward: %f\n", env->rewards[0]);
 
   // Draw axes
   Color axis_color = RAYWHITE;

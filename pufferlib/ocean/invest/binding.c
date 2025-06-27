@@ -6,6 +6,7 @@
 static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
   env->T = unpack(kwargs, "time_horizon");
   env->H = unpack(kwargs, "hurst");
+  env->process_type = unpack(kwargs, "process_type");
   return 0;
 }
 

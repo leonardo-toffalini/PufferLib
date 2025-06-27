@@ -1,7 +1,7 @@
 #include "invest.h"
 
 int main() {
-  Invest env = {.T = 100, .H = 0.1};
+  Invest env = {.T = 100, .H = 0.1, .process_type = 0};
   env.observations = (float *)calloc(1, sizeof(float));
   env.actions = (int *)calloc(1, sizeof(int));
   env.rewards = (float *)calloc(1, sizeof(float));

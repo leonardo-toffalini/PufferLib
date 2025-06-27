@@ -4,17 +4,28 @@ import numpy as np
 import pufferlib
 from pufferlib.ocean.invest import binding
 
+def process_name_to_process_id(process_name: str):
+    if process_name == "sin":
+        return 0
+    if process_name == "fbmm":
+        return 1
+    
+
 class Invest(pufferlib.PufferEnv):
-    def __init__(self, num_envs=1, render_mode=None, log_interval=128, time_horizon=100, hurst=0.1, buf=None, seed=0):
+    def __init__(self, num_envs=1, render_mode=None, log_interval=128, time_horizon=100,
+                 hurst=0.1, process_type="sin", buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
             shape=(4,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.Discrete(21)
         self.render_mode = render_mode
         self.num_agents = num_envs
 
+        process_id = process_name_to_process_id(process_type)
+
         super().__init__(buf)
         self.c_envs = binding.vec_init(self.observations, self.actions, self.rewards,
-            self.terminals, self.truncations, num_envs, seed, time_horizon=time_horizon, hurst=hurst)
+            self.terminals, self.truncations, num_envs, seed, time_horizon=time_horizon,
+            hurst=hurst, process_type=process_id)
  
     def reset(self, seed=0):
         binding.vec_reset(self.c_envs, seed)
@@ -34,7 +45,7 @@ class Invest(pufferlib.PufferEnv):
         binding.vec_close(self.c_envs)
 
 if __name__ == '__main__':
-    N = 1
+    N = 2048
     env = Invest(num_envs=N)
     env.reset()
     steps = 0
@@ -45,9 +56,11 @@ if __name__ == '__main__':
     import time
     start = time.time()
     while time.time() - start < 10:
-        obs, rewards, terminals, truncations, info = env.step(actions[steps % CACHE])
-        print(obs)
-        input("Press enter to continue...")
+        env.step(actions[steps % CACHE])
+        # obs, rewards, terminals, truncations, info = env.step(actions[steps % CACHE])
+        # print(obs)
+        # input("Press enter to continue...")
         steps += 1
 
-    print('Invest SPS:', int(env.num_agents * steps / (time.time() - start)))
+    sps = int(env.num_agents * steps / (time.time() - start))
+    print(f'Invest SPS: {sps:,}')
