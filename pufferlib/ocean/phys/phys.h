@@ -58,19 +58,8 @@ typedef struct {
   float x, y, z;
 } Vec3;
 
-typedef struct {
-  Vec3 pos;
-  Quat orientation;
-  Vec3 normal;
-  float radius;
-} Ring;
-
 static inline float clampf(float v, float min, float max) {
-  if (v < min)
-    return min;
-  if (v > max)
-    return max;
-  return v;
+  return fmin(fmax(v, min), max);
 }
 
 static inline float rndf(float a, float b) {
@@ -94,19 +83,6 @@ static inline float dot3(Vec3 a, Vec3 b) {
 }
 
 static inline float norm3(Vec3 a) { return sqrtf(dot3(a, a)); }
-
-static inline void clamp3(Vec3 *vec, float min, float max) {
-  vec->x = clampf(vec->x, min, max);
-  vec->y = clampf(vec->y, min, max);
-  vec->z = clampf(vec->z, min, max);
-}
-
-static inline void clamp4(float a[4], float min, float max) {
-  a[0] = clampf(a[0], min, max);
-  a[1] = clampf(a[1], min, max);
-  a[2] = clampf(a[2], min, max);
-  a[3] = clampf(a[3], min, max);
-}
 
 static inline Quat quat_mul(Quat q1, Quat q2) {
   Quat out;
@@ -159,23 +135,6 @@ Quat rndquat() {
   return q;
 }
 
-Ring rndring(void) {
-  Ring ring;
-
-  ring.pos.x = rndf(-GRID_SIZE + RING_MARGIN, GRID_SIZE - RING_MARGIN);
-  ring.pos.y = rndf(-GRID_SIZE + RING_MARGIN, GRID_SIZE - RING_MARGIN);
-  ring.pos.z = rndf(-GRID_SIZE + RING_MARGIN, GRID_SIZE - RING_MARGIN);
-
-  ring.orientation = rndquat();
-
-  Vec3 base_normal = {0.0f, 0.0f, 1.0f};
-  ring.normal = quat_rotate(ring.orientation, base_normal);
-
-  ring.radius = RING_RAD;
-
-  return ring;
-}
-
 typedef struct Client Client;
 struct Client {
   Camera3D camera;
@@ -209,7 +168,6 @@ struct Phys {
 
   int max_rings;
   int ring_idx;
-  Ring *ring_buffer;
 
   int max_moves;
   int moves_left;
@@ -228,7 +186,6 @@ void init(Phys *env) {
   env->tick = 0;
   // one extra ring for observation (requires current ring, next ring)
   // max_rings and moves_left are initialised in binding.c
-  env->ring_buffer = (Ring *)malloc((env->max_rings + 1) * sizeof(Ring));
 }
 
 void add_log(Phys *env) {
@@ -239,223 +196,18 @@ void add_log(Phys *env) {
   env->log.n += 1.0f;
 }
 
-void compute_observations(Phys *env) {
-  Quat q_inv = quat_inverse(env->quat);
-  Ring curr_ring = env->ring_buffer[env->ring_idx];
-  Ring next_ring = env->ring_buffer[env->ring_idx + 1];
-
-  Vec3 to_curr_ring = quat_rotate(q_inv, sub3(curr_ring.pos, env->pos));
-  Vec3 to_next_ring = quat_rotate(q_inv, sub3(next_ring.pos, env->pos));
-
-  Vec3 curr_ring_norm = quat_rotate(q_inv, curr_ring.normal);
-  Vec3 next_ring_norm = quat_rotate(q_inv, next_ring.normal);
-
-  Vec3 linear_vel_body = quat_rotate(q_inv, env->vel);
-  Vec3 drone_up_world = quat_rotate(env->quat, (Vec3){0.0f, 0.0f, 1.0f});
-
-  env->observations[0] = to_curr_ring.x / GRID_SIZE;
-  env->observations[1] = to_curr_ring.y / GRID_SIZE;
-  env->observations[2] = to_curr_ring.z / GRID_SIZE;
-
-  env->observations[3] = curr_ring_norm.x;
-  env->observations[4] = curr_ring_norm.y;
-  env->observations[5] = curr_ring_norm.z;
-
-  env->observations[6] = to_next_ring.x / GRID_SIZE;
-  env->observations[7] = to_next_ring.y / GRID_SIZE;
-  env->observations[8] = to_next_ring.z / GRID_SIZE;
-
-  env->observations[9] = next_ring_norm.x;
-  env->observations[10] = next_ring_norm.y;
-  env->observations[11] = next_ring_norm.z;
-
-  env->observations[12] = linear_vel_body.x / MAX_VEL;
-  env->observations[13] = linear_vel_body.y / MAX_VEL;
-  env->observations[14] = linear_vel_body.z / MAX_VEL;
-
-  env->observations[15] = env->omega.x / MAX_OMEGA;
-  env->observations[16] = env->omega.y / MAX_OMEGA;
-  env->observations[17] = env->omega.z / MAX_OMEGA;
-
-  env->observations[18] = drone_up_world.x;
-  env->observations[19] = drone_up_world.y;
-  env->observations[20] = drone_up_world.z;
-
-  env->observations[21] = env->quat.w;
-  env->observations[22] = env->quat.x;
-  env->observations[23] = env->quat.y;
-  env->observations[24] = env->quat.z;
-}
+void compute_observations(Phys *env) {}
 
 void c_reset(Phys *env) {
   env->tick = 0;
   env->score = 0;
   env->episodic_return = 0.0f;
-
-  env->moves_left = env->max_moves;
-
-  env->ring_idx = 0;
-
-  // creates rings at least MARGIN apart
-  if (env->max_rings + 1 > 0) {
-    env->ring_buffer[0] = rndring();
-  }
-
-  for (int i = 1; i < env->max_rings + 1; i++) {
-    do {
-      env->ring_buffer[i] = rndring();
-    } while (norm3(sub3(env->ring_buffer[i].pos, env->ring_buffer[i - 1].pos)) <
-             RING_MARGIN);
-  }
-
-  // start drone at least MARGIN away from the first ring
-  do {
-    env->pos = (Vec3){rndf(-9, 9), rndf(-9, 9), rndf(-9, 9)};
-  } while (norm3(sub3(env->pos, env->ring_buffer[0].pos)) < RING_MARGIN);
-
-  env->prev_pos = env->pos;
-  env->vel = (Vec3){0.0f, 0.0f, 0.0f};
-  env->omega = (Vec3){0.0f, 0.0f, 0.0f};
-  env->quat = (Quat){1.0f, 0.0f, 0.0f, 0.0f};
-
-  compute_observations(env);
 }
 
 void c_step(Phys *env) {
-  clamp4(env->actions, -1.0f, 1.0f);
-
-  env->tick++;
+  env->tick += 1;
   env->rewards[0] = 0;
   env->terminals[0] = 0;
-  env->log.score = 0;
-
-  // motor thrusts
-  float T[4];
-  for (int i = 0; i < 4; i++) {
-    T[i] = K_THRUST * powf((env->actions[i] + 1.0f) * 0.5f * MAX_RPM, 2.0f);
-  }
-
-  // body frame net force
-  Vec3 F_body = {0.0f, 0.0f, T[0] + T[1] + T[2] + T[3]};
-
-  // body frame torques
-  Vec3 M = {ARM_LEN * (T[1] - T[3]), ARM_LEN * (T[2] - T[0]),
-            K_DRAG * (T[0] - T[1] + T[2] - T[3])};
-
-  // applies angular damping to torques
-  M.x -= K_ANG_DAMP * env->omega.x;
-  M.y -= K_ANG_DAMP * env->omega.y;
-  M.z -= K_ANG_DAMP * env->omega.z;
-
-  // body frame force -> world frame force
-  Vec3 F_world = quat_rotate(env->quat, F_body);
-
-  // world frame linear drag
-  F_world.x -= B_DRAG * env->vel.x;
-  F_world.y -= B_DRAG * env->vel.y;
-  F_world.z -= B_DRAG * env->vel.z;
-
-  // world frame gravity
-  Vec3 accel = {F_world.x / MASS, F_world.y / MASS,
-                (F_world.z / MASS) - GRAVITY};
-
-  // from the definition of q dot
-  Quat omega_q = {0.0f, env->omega.x, env->omega.y, env->omega.z};
-  Quat q_dot = quat_mul(env->quat, omega_q);
-
-  q_dot.w *= 0.5f;
-  q_dot.x *= 0.5f;
-  q_dot.y *= 0.5f;
-  q_dot.z *= 0.5f;
-
-  // integrations
-  env->pos.x += env->vel.x * DT;
-  env->pos.y += env->vel.y * DT;
-  env->pos.z += env->vel.z * DT;
-
-  env->vel.x += accel.x * DT;
-  env->vel.y += accel.y * DT;
-  env->vel.z += accel.z * DT;
-
-  env->omega.x += (M.x / IXX) * DT;
-  env->omega.y += (M.y / IYY) * DT;
-  env->omega.z += (M.z / IZZ) * DT;
-
-  clamp3(&env->vel, -MAX_VEL, MAX_VEL);
-  clamp3(&env->omega, -MAX_OMEGA, MAX_OMEGA);
-
-  env->quat.w += q_dot.w * DT;
-  env->quat.x += q_dot.x * DT;
-  env->quat.y += q_dot.y * DT;
-  env->quat.z += q_dot.z * DT;
-
-  quat_normalize(&env->quat);
-
-  // check out of bounds
-  bool out_of_bounds = env->pos.x < -GRID_SIZE || env->pos.x > GRID_SIZE ||
-                       env->pos.y < -GRID_SIZE || env->pos.y > GRID_SIZE ||
-                       env->pos.z < -GRID_SIZE || env->pos.z > GRID_SIZE;
-
-  if (out_of_bounds) {
-    env->rewards[0] -= 1;
-    env->episodic_return -= 1;
-    env->terminals[0] = 1;
-    add_log(env);
-    c_reset(env);
-    compute_observations(env);
-    return;
-  }
-
-  // previous dot product negative if on the 'entry' side of the ring's plane
-  float prev_dot =
-      dot3(sub3(env->prev_pos, env->ring_buffer[env->ring_idx].pos),
-           env->ring_buffer[env->ring_idx].normal);
-
-  // new dot product positive if on the 'exit' side of the ring's plane
-  float new_dot = dot3(sub3(env->pos, env->ring_buffer[env->ring_idx].pos),
-                       env->ring_buffer[env->ring_idx].normal);
-
-  bool valid_dir = (prev_dot < 0.0f && new_dot > 0.0f);
-  bool invalid_dir = (prev_dot > 0.0f && new_dot < 0.0f);
-
-  // if we have crossed the plane of the ring
-  if (valid_dir || invalid_dir) {
-    // find intesection with ring's plane
-    Vec3 dir = sub3(env->pos, env->prev_pos);
-    float t = -prev_dot / dot3(env->ring_buffer[env->ring_idx].normal,
-                               dir); // possible nan
-
-    Vec3 intersection = add3(env->prev_pos, scalmul3(dir, t));
-    float dist = norm3(sub3(intersection, env->ring_buffer[env->ring_idx].pos));
-
-    // reward or terminate based on distance to ring center
-    if (dist < (env->ring_buffer[env->ring_idx].radius - 0.5) && valid_dir) {
-      env->rewards[0] += 1;
-      env->episodic_return += 1;
-      env->score++;
-      env->ring_idx++;
-    } else if (dist < env->ring_buffer[env->ring_idx].radius + 0.5) {
-      env->rewards[0] -= 1;
-      env->episodic_return -= 1;
-      env->terminals[0] = 1;
-      add_log(env);
-      c_reset(env);
-      return;
-    }
-  }
-
-  // truncate
-  env->moves_left -= 1;
-  if (env->moves_left == 0 || env->ring_idx == env->max_rings) {
-    env->terminals[0] = 1;
-    add_log(env);
-    c_reset(env);
-    return;
-  }
-
-  env->prev_pos = env->pos;
-
-  compute_observations(env);
 }
 
 void c_close_client(Client *client) {
@@ -464,8 +216,6 @@ void c_close_client(Client *client) {
 }
 
 void c_close(Phys *env) {
-  free(env->ring_buffer);
-
   if (env->client != NULL) {
     c_close_client(env->client);
   }

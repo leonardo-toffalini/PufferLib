@@ -4,8 +4,6 @@
 #include "../env_binding.h"
 
 static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
-  env->max_rings = unpack(kwargs, "max_rings");
-  env->max_moves = unpack(kwargs, "max_moves");
   init(env);
   return 0;
 }
