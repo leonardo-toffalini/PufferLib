@@ -7,8 +7,9 @@ from pufferlib.ocean.invest import binding
 def process_name_to_process_id(process_name: str):
     if process_name == "sin":
         return 0
-    if process_name == "fbmm":
+    if process_name == "fbm":
         return 1
+    return 0
     
 
 class Invest(pufferlib.PufferEnv):
