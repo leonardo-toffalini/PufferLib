@@ -102,7 +102,7 @@ void c_step(Invest *env) {
   env->risky_history[env->tick] = env->risky;
 
   if (env->tick >= env->T) {
-    env->rewards[0] = env->riskless;
+    env->rewards[0] = env->riskless + price * env->risky;
     env->terminals[0] = 1;
     add_log(env);
     c_reset(env);

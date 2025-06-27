@@ -19,7 +19,7 @@ int main() {
         env.actions[0] = -1;
       }
     } else {
-      env.actions[0] = rand() % 11 - 5;
+      env.actions[0] = rand() % 21;
     }
     c_step(&env);
     c_render(&env);
