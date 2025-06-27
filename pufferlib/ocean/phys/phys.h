@@ -13,6 +13,8 @@
 #include "raylib.h"
 #include "rlgl.h"
 
+#include "core.h"
+
 // Visualisation properties
 #define WIDTH 1080
 #define HEIGHT 720
@@ -39,7 +41,7 @@
 #define MAX_VEL 50.0f   // m/s
 #define MAX_OMEGA 50.0f // rad/s
 
-const Color PLANE_COLOR = (Color){30, 30, 30, 255};
+const Color PLANE_COLOR = (Color){35, 35, 35, 255};
 
 typedef struct Log Log;
 struct Log {
@@ -49,91 +51,6 @@ struct Log {
   float perf;
   float n;
 };
-
-typedef struct {
-  float w, x, y, z;
-} Quat;
-
-typedef struct {
-  float x, y, z;
-} Vec3;
-
-static inline float clampf(float v, float min, float max) {
-  return fmin(fmax(v, min), max);
-}
-
-static inline float rndf(float a, float b) {
-  return a + ((float)rand() / (float)RAND_MAX) * (b - a);
-}
-
-static inline Vec3 add3(Vec3 a, Vec3 b) {
-  return (Vec3){a.x + b.x, a.y + b.y, a.z + b.z};
-}
-
-static inline Vec3 sub3(Vec3 a, Vec3 b) {
-  return (Vec3){a.x - b.x, a.y - b.y, a.z - b.z};
-}
-
-static inline Vec3 scalmul3(Vec3 a, float b) {
-  return (Vec3){a.x * b, a.y * b, a.z * b};
-}
-
-static inline float dot3(Vec3 a, Vec3 b) {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-static inline float norm3(Vec3 a) { return sqrtf(dot3(a, a)); }
-
-static inline Quat quat_mul(Quat q1, Quat q2) {
-  Quat out;
-  out.w = q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z;
-  out.x = q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y;
-  out.y = q1.w * q2.y - q1.x * q2.z + q1.y * q2.w + q1.z * q2.x;
-  out.z = q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w;
-  return out;
-}
-
-static inline void quat_normalize(Quat *q) {
-  float n = sqrtf(q->w * q->w + q->x * q->x + q->y * q->y + q->z * q->z);
-  if (n > 0.0f) {
-    q->w /= n;
-    q->x /= n;
-    q->y /= n;
-    q->z /= n;
-  }
-}
-
-static inline Vec3 quat_rotate(Quat q, Vec3 v) {
-  Quat qv = {0.0f, v.x, v.y, v.z};
-  Quat tmp = quat_mul(q, qv);
-  Quat q_conj = {q.w, -q.x, -q.y, -q.z};
-  Quat res = quat_mul(tmp, q_conj);
-  return (Vec3){res.x, res.y, res.z};
-}
-
-static inline Quat quat_inverse(Quat q) {
-  return (Quat){q.w, -q.x, -q.y, -q.z};
-}
-
-Quat rndquat() {
-  float u1 = rndf(0.0f, 1.0f);
-  float u2 = rndf(0.0f, 1.0f);
-  float u3 = rndf(0.0f, 1.0f);
-
-  float sqrt_1_minus_u1 = sqrtf(1.0f - u1);
-  float sqrt_u1 = sqrtf(u1);
-
-  float pi_2_u2 = 2.0f * M_PI * u2;
-  float pi_2_u3 = 2.0f * M_PI * u3;
-
-  Quat q;
-  q.w = sqrt_1_minus_u1 * sinf(pi_2_u2);
-  q.x = sqrt_1_minus_u1 * cosf(pi_2_u2);
-  q.y = sqrt_u1 * sinf(pi_2_u3);
-  q.z = sqrt_u1 * cosf(pi_2_u3);
-
-  return q;
-}
 
 typedef struct Client Client;
 struct Client {
@@ -162,21 +79,9 @@ struct Phys {
 
   Log log;
   int tick;
-  int report_interval;
   int score;
-  float episodic_return;
 
-  int max_rings;
-  int ring_idx;
-
-  int max_moves;
-  int moves_left;
-
-  Vec3 pos; // global position (x, y, z)
-  Vec3 prev_pos;
-  Vec3 vel;   // linear velocity (u, v, w)
-  Quat quat;  // roll/pitch/yaw (phi/theta/psi) as a quaternion
-  Vec3 omega; // angular velocity (p, q, r)
+  RigidBody body;
 
   Client *client;
 };
@@ -190,9 +95,7 @@ void init(Phys *env) {
 
 void add_log(Phys *env) {
   env->log.score += env->score;
-  env->log.episode_return += env->episodic_return;
   env->log.episode_length += env->tick;
-  env->log.perf += (float)env->ring_idx / (float)env->max_rings;
   env->log.n += 1.0f;
 }
 
@@ -201,13 +104,15 @@ void compute_observations(Phys *env) {}
 void c_reset(Phys *env) {
   env->tick = 0;
   env->score = 0;
-  env->episodic_return = 0.0f;
+  env->body = create_cuboid();
 }
 
 void c_step(Phys *env) {
   env->tick += 1;
   env->rewards[0] = 0;
   env->terminals[0] = 0;
+
+  step_simulation(&env->body);
 }
 
 void c_close_client(Client *client) {
@@ -302,42 +207,7 @@ Client *make_client(Phys *env) {
 
   update_camera_position(client);
 
-  // Initialize trail buffer
-  client->trail_index = 0;
-  client->trail_count = 0;
-  for (int i = 0; i < TRAIL_LENGTH; i++) {
-    client->trail[i] = env->pos;
-  }
-
   return client;
-}
-
-void DrawHorizontalPlane(Vector3 centerPos, Vector2 size, Color color) {
-  rlPushMatrix();
-  rlTranslatef(centerPos.x, centerPos.y, centerPos.z);
-  rlRotatef(90, 1, 0, 0); // Rotate 90 degrees around X axis
-  DrawPlane((Vector3){0, 0, 0}, size, color);
-  rlPopMatrix();
-}
-
-// Draw a grid centered at (0, 0, z) in the XY plane
-void DrawGridXY(int slices, float spacing, float z, Color color) {
-  int halfSlices = slices / 2;
-  rlBegin(RL_LINES);
-  for (int i = -halfSlices; i <= halfSlices; i++) {
-    // Optionally use a different color for the center lines
-    Color lineColor = color;
-    rlColor4ub(lineColor.r, lineColor.g, lineColor.b, lineColor.a);
-
-    // Vertical lines (constant x, varying y)
-    rlVertex3f((float)i * spacing, (float)-halfSlices * spacing, z);
-    rlVertex3f((float)i * spacing, (float)halfSlices * spacing, z);
-
-    // Horizontal lines (constant y, varying x)
-    rlVertex3f((float)-halfSlices * spacing, (float)i * spacing, z);
-    rlVertex3f((float)halfSlices * spacing, (float)i * spacing, z);
-  }
-  rlEnd();
 }
 
 void c_render(Phys *env) {
@@ -362,19 +232,19 @@ void c_render(Phys *env) {
   handle_camera_controls(env->client);
 
   Client *client = env->client;
-  client->trail[client->trail_index] = env->pos;
-  client->trail_index = (client->trail_index + 1) % TRAIL_LENGTH;
-  if (client->trail_count < TRAIL_LENGTH)
-    client->trail_count++;
 
   BeginDrawing();
   ClearBackground(BLACK);
 
   BeginMode3D(client->camera);
 
-  DrawHorizontalPlane((Vector3){0, 0, -GRID_SIZE}, (Vector2){40, 40},
-                      PLANE_COLOR);
-  DrawGridXY(20, 2.0f, -GRID_SIZE + 0.01f, RAYWHITE);
+  DrawHorizontalPlane((Vector3){0, 0, -10}, (Vector2){40, 40}, PLANE_COLOR);
+  DrawGridXY(20, 2.0f, -10 + 0.01f, RAYWHITE);
+
+  draw_body(&env->body);
+
+  // void DrawCubeWires(Vector3 position, float width, float height, float
+  // length, Color color);
 
   EndMode3D();
 

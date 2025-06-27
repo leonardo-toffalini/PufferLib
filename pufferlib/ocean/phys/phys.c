@@ -123,8 +123,6 @@ int main() {
   srand(time(NULL)); // Seed random number generator
 
   Phys *env = calloc(1, sizeof(Phys));
-  env->max_moves = 1000;
-  env->max_rings = 10;
 
   size_t obs_size = 25;
   size_t act_size = 4;
