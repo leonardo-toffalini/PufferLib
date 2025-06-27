@@ -8,7 +8,6 @@
 #ifndef PI
 #define PI 3.14159265358979323846
 #endif
-#define MAX_TIME_HORIZON 1000 // Define a reasonable maximum time horizon
 
 typedef struct {
   float perf;
@@ -54,15 +53,16 @@ double *sin_process(Invest *env) {
   return process;
 }
 
+void compute_observations(Invest *env) {
+  int obs_idx = 0;
+  env->observations[obs_idx++] = (float)(env->T - env->tick) / env->T;
+  env->observations[obs_idx++] = env->prices[env->tick];
+  env->observations[obs_idx++] = env->riskless;
+  env->observations[obs_idx++] = env->risky;
+}
+
 // Required function
 void c_reset(Invest *env) {
-  if (env->T > MAX_TIME_HORIZON) {
-    fprintf(stderr,
-            "Error: Time horizon is greater than MAX_TIME_HORIZON: %d > %d\n",
-            env->T, MAX_TIME_HORIZON);
-    exit(1);
-  }
-
   env->tick = 0;
   env->riskless = 0;
   env->risky = 0;
@@ -77,15 +77,7 @@ void c_reset(Invest *env) {
   memset(env->riskless_history, 0, sizeof(*env->riskless_history));
   memset(env->risky_history, 0, sizeof(*env->risky_history));
 
-  env->tick = 0;
-}
-
-void compute_observations(Invest *env) {
-  int obs_idx = 0;
-  env->observations[obs_idx++] = env->T - env->tick;
-  env->observations[obs_idx++] = env->prices[env->tick];
-  env->observations[obs_idx++] = env->riskless;
-  env->observations[obs_idx++] = env->risky;
+  compute_observations(env);
 }
 
 void c_step(Invest *env) {

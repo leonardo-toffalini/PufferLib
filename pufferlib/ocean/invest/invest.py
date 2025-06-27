@@ -7,7 +7,7 @@ from pufferlib.ocean.invest import binding
 class Invest(pufferlib.PufferEnv):
     def __init__(self, num_envs=1, render_mode=None, log_interval=128, time_horizon=100, hurst=0.1, buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
-            shape=(1,), dtype=np.uint8)
+            shape=(4,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.Discrete(21)
         self.render_mode = render_mode
         self.num_agents = num_envs
@@ -34,7 +34,7 @@ class Invest(pufferlib.PufferEnv):
         binding.vec_close(self.c_envs)
 
 if __name__ == '__main__':
-    N = 4096
+    N = 1
     env = Invest(num_envs=N)
     env.reset()
     steps = 0
@@ -45,7 +45,9 @@ if __name__ == '__main__':
     import time
     start = time.time()
     while time.time() - start < 10:
-        env.step(actions[steps % CACHE])
+        obs, rewards, terminals, truncations, info = env.step(actions[steps % CACHE])
+        print(obs)
+        input("Press enter to continue...")
         steps += 1
 
     print('Invest SPS:', int(env.num_agents * steps / (time.time() - start)))
