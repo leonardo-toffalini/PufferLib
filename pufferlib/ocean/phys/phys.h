@@ -63,11 +63,6 @@ struct Client {
   float camera_elevation;
   bool is_dragging;
   Vector2 last_mouse_pos;
-
-  // Trailing path buffer (for rendering only)
-  Vec3 trail[TRAIL_LENGTH];
-  int trail_index;
-  int trail_count;
 };
 
 typedef struct Phys Phys;
@@ -161,7 +156,7 @@ void handle_camera_controls(Client *client) {
 
     client->camera_elevation += mouse_delta.y * sensitivity;
     client->camera_elevation =
-        clampf(client->camera_elevation, -PI / 2.0f + 0.1f, PI / 2.0f - 0.1f);
+        Clamp(client->camera_elevation, -PI / 2.0f + 0.1f, PI / 2.0f - 0.1f);
 
     client->last_mouse_pos = mouse_pos;
 
@@ -171,7 +166,7 @@ void handle_camera_controls(Client *client) {
   float wheel = GetMouseWheelMove();
   if (wheel != 0) {
     client->camera_distance -= wheel * 2.0f;
-    client->camera_distance = clampf(client->camera_distance, 5.0f, 50.0f);
+    client->camera_distance = Clamp(client->camera_distance, 5.0f, 50.0f);
     update_camera_position(client);
   }
 }
