@@ -3,9 +3,10 @@
 #include "ray_helpers.h"
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <math.h>
 
-const float DT = 0.01;
+const float DT = 0.001f;
 const Vector3 IHAT = (Vector3){1.0f, 0.0f, 0.0f};
 const Vector3 JHAT = (Vector3){0.0f, 1.0f, 0.0f};
 const Vector3 KHAT = (Vector3){0.0f, 0.0f, 1.0f};
@@ -13,25 +14,77 @@ const Vector3 KHAT = (Vector3){0.0f, 0.0f, 1.0f};
 typedef struct {
   Vector3 X;
   Vector3 V;
+  Matrix R;
+  Vector3 L;
+
+  Vector3 InvI0;
 } RigidBody;
 
-RigidBody create_cuboid() {
+static Matrix DiagonalMatrixV(Vector3 v) { return MatrixScale(v.x, v.y, v.z); }
+static Matrix DiagonalMatrix(float x, float y, float z) {
+  return MatrixScale(x, y, z);
+}
+
+static Matrix Cross(Vector3 v) {
+  // clang-format off
+  Matrix result = {
+    0.0f, -v.z, v.y,
+    v.z, 0.0f, -v.x,
+    -v.y, v.x, 0.0f,
+    0.0f, 0.0f, 1.0f,
+  };
+  return result;
+}
+
+static Matrix MatrixFloatMultiply(Matrix m, float c) {
+  return MatrixMultiply(m, MatrixScale(c, c, c));
+}
+
+static Vector3 inertia_cuboid_density(float a, float b, float c) {
+  float V = a * b * c;
+  Vector3 D = (Vector3){b * b + c * c, a * a + c * c, a * a + b * b};
+  return Vector3Scale(D, V / 12);
+}
+
+RigidBody create_cuboid(void) {
   Vector3 X = {0.0f, 0.0f, 0.0f};
-  Vector3 V = {1.0f, 2.5f, 1.2f};
-  return (RigidBody){X, V};
+  Vector3 V = {0.8f, 0.2f, 0.3f};
+  Matrix R = MatrixIdentity();
+  Vector3 L = {1.0f, 1.0f, 0.0f};
+
+  Vector3 InvI0 = Vector3Invert(inertia_cuboid_density(1.4f, 0.7f, 2.1f));
+
+  return (RigidBody){X, V, R, L, InvI0};
 }
 
 void step_simulation(RigidBody *body) {
-  body->X = Vector3Add(body->X, Vector3Scale(body->V, 0.01f));
+  Matrix R = body->R;
+  Matrix InvI0 = DiagonalMatrixV(body->InvI0);
+
+  Vector3 omega = Vector3Transform(
+    body->L,
+    MatrixMultiply(
+      MatrixMultiply(R, InvI0),
+      MatrixTranspose(R)
+    )
+  );
+  body->R = MatrixAdd(MatrixFloatMultiply(MatrixMultiply(Cross(omega), R), DT), body->R);
+  body->X = Vector3Add(body->X, Vector3Scale(body->V, DT));
 }
 
 void draw_body(RigidBody *body) {
-  DrawArrow3D(body->X, Vector3Add(body->X, IHAT), RED);
-  DrawArrow3D(body->X, Vector3Add(body->X, JHAT), GREEN);
-  DrawArrow3D(body->X, Vector3Add(body->X, KHAT), BLUE);
-  DrawArrow3D(body->X, Vector3Add(body->X, body->V), MAGENTA);
-  DrawCube(body->X, 1, 2, 3, ColorAlpha(RAYWHITE, 0.5f));
-  DrawCubeWires(body->X, 1, 2, 3, RED);
+  Vector3 zero = Vector3Zero();
+
+  rlPushMatrix();
+  rlTranslatef(body->X.x, body->X.y, body->X.z);
+  rlMultMatrixf((float *)&body->R);
+  DrawArrow3D(zero, IHAT, RED);
+  DrawArrow3D(zero, JHAT, GREEN);
+  DrawArrow3D(zero, KHAT, BLUE);
+  DrawArrow3D(zero, body->V, MAGENTA);
+  DrawCube(Vector3Zero(), 1, 2, 3, ColorAlpha(RAYWHITE, 0.5f));
+  DrawCubeWires(Vector3Zero(), 1, 2, 3, RED);
+  rlPopMatrix();
 }
 
 /////////////////////////////////////
