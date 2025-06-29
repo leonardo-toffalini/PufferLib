@@ -87,12 +87,21 @@ void c_reset(HardMaze *env) {
   env->player = player;
 }
 
-void c_step(HardMaze *env) {
-  env->tick += 1;
+int check_collisions(HardMaze *env) {
+  Wall w;
+  Vector2 p1, p2;
+  for (int i = 0; i < MAX_WALLS; i++) {
+    w = env->walls[i];
+    p1 = (Vector2){w.ax, w.ay};
+    p2 = (Vector2){w.bx, w.by};
+    if (CheckCollisionCircleLine(env->player.pos, env->player.radius, p1, p2))
+      return 1;
+  }
+  return 0;
+}
 
-  int action = env->actions[0];
-  env->terminals[0] = 0;
-  env->rewards[0] = 0;
+void execute_action(HardMaze *env, int action) {
+  Vector2 prev_pos = env->player.pos;
 
   switch (action) {
   case LEFT:
@@ -107,14 +116,28 @@ void c_step(HardMaze *env) {
   default:
     break;
   }
+
+  if (check_collisions(env)) {
+    env->player.pos = prev_pos;
+  }
+}
+
+void c_step(HardMaze *env) {
+  env->tick += 1;
+
+  int action = env->actions[0];
+  env->terminals[0] = 0;
+  env->rewards[0] = 0;
+
+  execute_action(env, action);
 }
 
 void draw_player(HardMaze *env) {
   Vector2 center = env->player.pos;
   float r = env->player.radius;
   Vector2 forward = env->player.forward;
-  DrawRing(center, r, r + 2, 0, 360, 64, BLACK);
-  DrawCircleV(center, r, RED);
+  DrawRing(center, r - 2, r, 0, 360, 64, BLACK);
+  DrawCircleV(center, r - 2, RED);
   DrawLineEx(center, Vector2Add(center, Vector2Scale(forward, 2 * r)), 2, BLUE);
 }
 
