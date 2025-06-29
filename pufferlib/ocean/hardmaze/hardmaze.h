@@ -1,16 +1,15 @@
 #include "raylib.h"
+#include "raymath.h"
 #include <stdlib.h>
 #include <string.h>
 
 const unsigned char NOOP = 0;
-const unsigned char DOWN = 1;
-const unsigned char UP = 2;
-const unsigned char LEFT = 3;
-const unsigned char RIGHT = 4;
+const unsigned char LEFT = 1;
+const unsigned char FORWARD = 2;
+const unsigned char RIGHT = 3;
 
-const unsigned char EMPTY = 0;
-const unsigned char AGENT = 1;
-const unsigned char TARGET = 2;
+const float ANGULAR_SPEED = 0.1f;
+const float LINEAR_SPEED = 2.0f;
 
 #define MAX_WALLS 20
 
@@ -22,6 +21,13 @@ typedef struct {
 
   float n;
 } Log;
+
+typedef struct {
+  Vector2 pos;
+  Vector2 forward;
+  float radius;
+  float radius_sq;
+} Player;
 
 typedef struct {
   float ax;
@@ -41,6 +47,7 @@ typedef struct {
   int r;
   int c;
   Wall walls[MAX_WALLS];
+  Player player;
 } HardMaze;
 
 void add_log(HardMaze *env) {
@@ -53,6 +60,13 @@ void add_log(HardMaze *env) {
 
 void set_up_walls(HardMaze *env) {
   int wall_idx = 0;
+  // boundaries
+  env->walls[wall_idx++] = (Wall){64, 64, 576, 64};
+  env->walls[wall_idx++] = (Wall){64, 64, 64, 576};
+  env->walls[wall_idx++] = (Wall){576, 64, 576, 576};
+  env->walls[wall_idx++] = (Wall){64, 576, 576, 576};
+
+  // obstacles
   env->walls[wall_idx++] = (Wall){64, 250, 144, 330};
   env->walls[wall_idx++] = (Wall){64, 200, 244, 180};
   env->walls[wall_idx++] = (Wall){244, 180, 234, 480};
@@ -62,7 +76,16 @@ void set_up_walls(HardMaze *env) {
   env->walls[wall_idx++] = (Wall){576, 420, 324, 240};
 }
 
-void c_reset(HardMaze *env) { set_up_walls(env); }
+void c_reset(HardMaze *env) {
+  set_up_walls(env);
+  Player player = {
+      (Vector2){100.0f, 540.0f},
+      (Vector2){0.0f, -1.0f},
+      10.0f,
+      100.0f,
+  };
+  env->player = player;
+}
 
 void c_step(HardMaze *env) {
   env->tick += 1;
@@ -70,24 +93,36 @@ void c_step(HardMaze *env) {
   int action = env->actions[0];
   env->terminals[0] = 0;
   env->rewards[0] = 0;
+
+  switch (action) {
+  case LEFT:
+    env->player.forward = Vector2Rotate(env->player.forward, -ANGULAR_SPEED);
+    break;
+  case RIGHT:
+    env->player.forward = Vector2Rotate(env->player.forward, ANGULAR_SPEED);
+    break;
+  case FORWARD:
+    env->player.pos = Vector2Add(
+        env->player.pos, Vector2Scale(env->player.forward, LINEAR_SPEED));
+  default:
+    break;
+  }
 }
 
-void draw_box() {
-  // top
-  DrawLine(64, 64, 640 - 64, 64, BLACK);
-  // left
-  DrawLine(64, 64, 64, 640 - 64, BLACK);
-  // right
-  DrawLine(640 - 64, 64, 640 - 64, 640 - 64, BLACK);
-  // bottom
-  DrawLine(64, 640 - 64, 640 - 64, 640 - 64, BLACK);
+void draw_player(HardMaze *env) {
+  Vector2 center = env->player.pos;
+  float r = env->player.radius;
+  Vector2 forward = env->player.forward;
+  DrawRing(center, r, r + 2, 0, 360, 64, BLACK);
+  DrawCircleV(center, r, RED);
+  DrawLineEx(center, Vector2Add(center, Vector2Scale(forward, 2 * r)), 2, BLUE);
 }
 
 void c_render(HardMaze *env) {
   if (!IsWindowReady()) {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(640, 640, "PufferLib HardMaze");
-    SetTargetFPS(5);
+    SetTargetFPS(30);
   }
 
   if (IsKeyDown(KEY_ESCAPE)) {
@@ -97,12 +132,12 @@ void c_render(HardMaze *env) {
   BeginDrawing();
   ClearBackground(RAYWHITE);
 
-  draw_box();
-
   for (int i = 0; i < MAX_WALLS; i++) {
     Wall w = env->walls[i];
     DrawLine(w.ax, w.ay, w.bx, w.by, BLACK);
   }
+
+  draw_player(env);
 
   EndDrawing();
 }
