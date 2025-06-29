@@ -8,10 +8,11 @@ const unsigned char LEFT = 1;
 const unsigned char FORWARD = 2;
 const unsigned char RIGHT = 3;
 
-const float ANGULAR_SPEED = 0.1f;
+const float ANGULAR_SPEED = PI / 60;
 const float LINEAR_SPEED = 2.0f;
 
 #define MAX_WALLS 20
+#define NUM_RANGE_FINDERS 5
 
 typedef struct {
   float perf;
@@ -25,6 +26,7 @@ typedef struct {
 typedef struct {
   Vector2 pos;
   Vector2 forward;
+  float angle;
   float radius;
   float radius_sq;
 } Player;
@@ -35,6 +37,12 @@ typedef struct {
   float bx;
   float by;
 } Wall;
+
+typedef struct {
+  float angle;
+  float max_range;
+  float distance;
+} RangeFinder;
 
 typedef struct {
   Log log;
@@ -48,6 +56,7 @@ typedef struct {
   int c;
   Wall walls[MAX_WALLS];
   Player player;
+  RangeFinder range_finders[NUM_RANGE_FINDERS];
 } HardMaze;
 
 void add_log(HardMaze *env) {
@@ -76,13 +85,19 @@ void set_up_walls(HardMaze *env) {
   env->walls[wall_idx++] = (Wall){576, 420, 324, 240};
 }
 
+void set_up_range_finders(HardMaze *env) {
+  float delta_angle = PI / (NUM_RANGE_FINDERS - 1);
+  for (int i = 0; i < NUM_RANGE_FINDERS; i++) {
+    env->range_finders[i] = (RangeFinder){i * delta_angle, 40.0f, 1.0f};
+  }
+}
+
 void c_reset(HardMaze *env) {
   set_up_walls(env);
+  set_up_range_finders(env);
+
   Player player = {
-      (Vector2){100.0f, 540.0f},
-      (Vector2){0.0f, -1.0f},
-      10.0f,
-      100.0f,
+      (Vector2){100.0f, 540.0f}, (Vector2){0.0f, -1.0f}, PI / 2, 10.0f, 100.0f,
   };
   env->player = player;
 }
@@ -106,9 +121,11 @@ void execute_action(HardMaze *env, int action) {
   switch (action) {
   case LEFT:
     env->player.forward = Vector2Rotate(env->player.forward, -ANGULAR_SPEED);
+    env->player.angle -= ANGULAR_SPEED;
     break;
   case RIGHT:
     env->player.forward = Vector2Rotate(env->player.forward, ANGULAR_SPEED);
+    env->player.angle += ANGULAR_SPEED;
     break;
   case FORWARD:
     env->player.pos = Vector2Add(
@@ -132,13 +149,33 @@ void c_step(HardMaze *env) {
   execute_action(env, action);
 }
 
+void draw_walls(HardMaze *env) {
+  for (int i = 0; i < MAX_WALLS; i++) {
+    Wall w = env->walls[i];
+    DrawLine(w.ax, w.ay, w.bx, w.by, BLACK);
+  }
+}
+
 void draw_player(HardMaze *env) {
   Vector2 center = env->player.pos;
   float r = env->player.radius;
-  Vector2 forward = env->player.forward;
   DrawRing(center, r - 2, r, 0, 360, 64, BLACK);
   DrawCircleV(center, r - 2, RED);
-  DrawLineEx(center, Vector2Add(center, Vector2Scale(forward, 2 * r)), 2, BLUE);
+}
+
+void draw_range_finders(HardMaze *env) {
+  Vector2 center = env->player.pos;
+  Vector2 base_vec = (Vector2){0.0f, 1.0f};
+  Vector2 direction;
+  RangeFinder rf;
+  for (int i = 0; i < NUM_RANGE_FINDERS; i++) {
+    rf = env->range_finders[i];
+    direction = Vector2Rotate(base_vec, rf.angle + env->player.angle);
+    DrawLineEx(
+        Vector2Add(center, Vector2Scale(direction, env->player.radius)),
+        Vector2Add(center, Vector2Scale(direction, rf.distance * rf.max_range)),
+        2, GREEN);
+  }
 }
 
 void c_render(HardMaze *env) {
@@ -155,12 +192,9 @@ void c_render(HardMaze *env) {
   BeginDrawing();
   ClearBackground(RAYWHITE);
 
-  for (int i = 0; i < MAX_WALLS; i++) {
-    Wall w = env->walls[i];
-    DrawLine(w.ax, w.ay, w.bx, w.by, BLACK);
-  }
-
+  draw_walls(env);
   draw_player(env);
+  draw_range_finders(env);
 
   EndDrawing();
 }
