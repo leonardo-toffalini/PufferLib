@@ -58,6 +58,7 @@ typedef struct {
   Wall walls[MAX_WALLS];
   Player player;
   RangeFinder range_finders[NUM_RANGE_FINDERS];
+  Vector2 goal;
 } HardMaze;
 
 void add_log(HardMaze *env) {
@@ -101,6 +102,8 @@ void c_reset(HardMaze *env) {
       (Vector2){100.0f, 540.0f}, (Vector2){0.0f, -1.0f}, PI / 2, 10.0f, 100.0f,
   };
   env->player = player;
+
+  env->goal = (Vector2){120, 120};
 }
 
 int check_collisions(HardMaze *env) {
@@ -146,6 +149,13 @@ void update_range_finders(HardMaze *env) {
   }
 }
 
+void check_reached_goal(HardMaze *env) {
+  if (Vector2Distance(env->player.pos, env->goal) < env->player.radius) {
+    env->terminals[0] = 1;
+    env->rewards[0] = 1;
+  }
+}
+
 void execute_action(HardMaze *env, int action) {
   Vector2 prev_pos = env->player.pos;
 
@@ -170,6 +180,7 @@ void execute_action(HardMaze *env, int action) {
   }
 
   update_range_finders(env);
+  check_reached_goal(env);
 }
 
 void c_step(HardMaze *env) {
@@ -180,6 +191,11 @@ void c_step(HardMaze *env) {
   env->rewards[0] = 0;
 
   execute_action(env, action);
+  if (env->terminals[0]) {
+    add_log(env);
+    c_reset(env);
+    return;
+  }
 }
 
 void draw_walls(HardMaze *env) {
@@ -193,7 +209,7 @@ void draw_player(HardMaze *env) {
   Vector2 center = env->player.pos;
   float r = env->player.radius;
   DrawRing(center, r - 2, r, 0, 360, 64, BLACK);
-  DrawCircleV(center, r - 2, RED);
+  DrawCircleV(center, r - 2, LIGHTGRAY);
 }
 
 void draw_range_finders(HardMaze *env) {
@@ -209,6 +225,12 @@ void draw_range_finders(HardMaze *env) {
         Vector2Add(center, Vector2Scale(direction, rf.distance * rf.max_range)),
         2, GREEN);
   }
+}
+
+void draw_goal(HardMaze *env) {
+  int r = 5;
+  DrawRing(env->goal, r - 2, r, 0, 360, 64, BLACK);
+  DrawCircleV(env->goal, r - 2, GREEN);
 }
 
 void c_render(HardMaze *env) {
@@ -228,6 +250,7 @@ void c_render(HardMaze *env) {
   draw_walls(env);
   draw_player(env);
   draw_range_finders(env);
+  draw_goal(env);
 
   EndDrawing();
 }
