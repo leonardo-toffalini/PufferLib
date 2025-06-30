@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include "raymath.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -115,6 +116,36 @@ int check_collisions(HardMaze *env) {
   return 0;
 }
 
+void update_range_finders(HardMaze *env) {
+  RangeFinder rf;
+  Wall w;
+  Vector2 collision_point, direction, end;
+  Vector2 base_vec = (Vector2){0.0f, 1.0f};
+  Vector2 center = env->player.pos;
+  float dist;
+
+  for (int i = 0; i < NUM_RANGE_FINDERS; i++) {
+    env->range_finders[i].distance = 1.0f;
+    rf = env->range_finders[i];
+
+    for (int j = 0; j < MAX_WALLS; j++) {
+      w = env->walls[j];
+
+      direction = Vector2Rotate(base_vec, rf.angle + env->player.angle);
+
+      end = Vector2Add(center, Vector2Scale(direction, rf.max_range));
+      if (!CheckCollisionLines(center, end, (Vector2){w.ax, w.ay},
+                               (Vector2){w.bx, w.by}, &collision_point))
+        continue;
+
+      dist = Vector2Distance(collision_point, center) / rf.max_range;
+      if (dist < rf.distance) {
+        env->range_finders[i].distance = dist;
+      }
+    }
+  }
+}
+
 void execute_action(HardMaze *env, int action) {
   Vector2 prev_pos = env->player.pos;
 
@@ -137,6 +168,8 @@ void execute_action(HardMaze *env, int action) {
   if (check_collisions(env)) {
     env->player.pos = prev_pos;
   }
+
+  update_range_finders(env);
 }
 
 void c_step(HardMaze *env) {
