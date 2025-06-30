@@ -57,6 +57,15 @@ typedef struct {
   float distance;
 } AsteroidDistance;
 
+// Comparison function for qsort
+int compare_asteroid_distance(const void *a, const void *b) {
+  const AsteroidDistance *aa = (const AsteroidDistance *)a;
+  const AsteroidDistance *bb = (const AsteroidDistance *)b;
+  if (aa->distance < bb->distance) return -1;
+  if (aa->distance > bb->distance) return 1;
+  return 0;
+}
+
 typedef struct {
   Log log;
   float *observations;
@@ -320,9 +329,7 @@ void compute_observations(Asteroids *env) {
   env->observations[observation_indx++] = env->player_vel.x;
   env->observations[observation_indx++] = env->player_vel.y;
   
-  // Create temporary array to store asteroids with their distances
   AsteroidDistance asteroid_distances[MAX_ASTEROIDS];
-  
   int num_active_asteroids = 0;
   
   // Calculate distances and store active asteroids
@@ -340,37 +347,24 @@ void compute_observations(Asteroids *env) {
     num_active_asteroids++;
   }
   
-  // Sort asteroids by distance (bubble sort for simplicity)
-  for (int i = 0; i < num_active_asteroids - 1; i++) {
-    for (int j = 0; j < num_active_asteroids - i - 1; j++) {
-      if (asteroid_distances[j].distance > asteroid_distances[j + 1].distance) {
-        AsteroidDistance temp = asteroid_distances[j];
-        asteroid_distances[j] = asteroid_distances[j + 1];
-        asteroid_distances[j + 1] = temp;
-      }
-    }
-  }
+  qsort(asteroid_distances, num_active_asteroids, sizeof(AsteroidDistance), compare_asteroid_distance);
   
   // Output sorted asteroids to observations (up to MAX_ASTEROIDS)
-  for (int i = 0; i < MAX_ASTEROIDS; i++) {
-    if (i < num_active_asteroids) {
-      Asteroid as = asteroid_distances[i].asteroid;
-      env->observations[observation_indx++] =
-          (as.position.x - env->player_position.x) / env->size;
-      env->observations[observation_indx++] =
-          (as.position.y - env->player_position.y) / env->size;
-      env->observations[observation_indx++] = as.velocity.x;
-      env->observations[observation_indx++] = as.velocity.y;
-      env->observations[observation_indx++] = (float)as.radius / 40;
-    } else {
-      // Pad with zeros for missing asteroids to ensure fixed observation size
-      env->observations[observation_indx++] = 0.0f; // relative x
-      env->observations[observation_indx++] = 0.0f; // relative y
-      env->observations[observation_indx++] = 0.0f; // velocity x
-      env->observations[observation_indx++] = 0.0f; // velocity y
-      env->observations[observation_indx++] = 0.0f; // radius
-    }
+  for (int i = 0; i < num_active_asteroids; i++) {
+    Asteroid as = asteroid_distances[i].asteroid;
+    env->observations[observation_indx++] =
+        (as.position.x - env->player_position.x) / env->size;
+    env->observations[observation_indx++] =
+        (as.position.y - env->player_position.y) / env->size;
+    env->observations[observation_indx++] = as.velocity.x;
+    env->observations[observation_indx++] = as.velocity.y;
+    env->observations[observation_indx++] = (float)as.radius / 40;
   }
+  
+  // Pad remaining observations with zeros for missing asteroids
+  int remaining_observations = (MAX_ASTEROIDS - num_active_asteroids) * 5;
+  memset(&env->observations[observation_indx], 0, remaining_observations * sizeof(float));
+  observation_indx += remaining_observations;
 }
 
 void add_log(Asteroids *env) {
