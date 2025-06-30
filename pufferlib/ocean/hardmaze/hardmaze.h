@@ -6,9 +6,13 @@
  - 3 => turn right
 
  observation: Box(0, 1, shape=(2 + 1 + num_range_finders))
- - 2 for plalyer position normalized
- - 1 for radar reading, meaning which rader sees the objective (if any)
- - num_range_finders for the proportional length of each range finder
+ - 2 => for player position normalized
+ - 1 => for radar reading, meaning which radar sees the objective (if any)
+ - num_range_finders => for the proportional length of each range finder
+
+ rewards:
+ +1 for reaching the goal
+ -0.1 otherwise for every step
 */
 
 #include "raylib.h"
@@ -27,6 +31,7 @@ const float LINEAR_SPEED = 2.0f;
 const float RADAR_RANGE = 150.0f;
 
 const int FRAME_SKIP = 4;
+const int MAX_TICKS = 500;
 
 const int DEBUG = 0;
 
@@ -121,7 +126,7 @@ void c_reset(HardMaze *env) {
       (Vector2){100.0f, 540.0f}, (Vector2){0.0f, -1.0f}, PI / 2, 10.0f, 100.0f,
   };
   env->player = player;
-
+  env->tick = 0;
   env->goal = (Vector2){120, 120};
   env->radar_reading = -1;
 }
@@ -247,7 +252,7 @@ void c_step(HardMaze *env) {
   execute_action(env, action);
   compute_observations(env);
 
-  if (env->terminals[0]) {
+  if (env->terminals[0] || env->tick > MAX_TICKS) {
     add_log(env);
     c_reset(env);
     return;
@@ -265,7 +270,7 @@ void draw_player(HardMaze *env) {
   Vector2 center = env->player.pos;
   float r = env->player.radius;
   DrawRing(center, r - 2, r, 0, 360, 64, BLACK);
-  DrawCircleV(center, r - 2, LIGHTGRAY);
+  DrawCircleV(center, r - 2, RED);
 }
 
 void draw_range_finders(HardMaze *env) {
