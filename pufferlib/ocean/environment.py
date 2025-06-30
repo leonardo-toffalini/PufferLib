@@ -152,6 +152,7 @@ MAKE_FUNCTIONS = {
     'pacman': 'Pacman',
     'checkers': 'Checkers',
     'asteroids': 'Asteroids',
+    'hardmaze': 'HardMaze',
     'spaces': make_spaces,
     'multiagent': make_multiagent,
 }
