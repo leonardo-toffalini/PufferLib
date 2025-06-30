@@ -1,3 +1,16 @@
+/*
+ action: Discrete(4)
+ - 0 => noop
+ - 1 => turn left
+ - 2 => go forward
+ - 3 => turn right
+
+ observation: Box(0, 1, shape=(2 + 1 + num_range_finders))
+ - 2 for plalyer position normalized
+ - 1 for radar reading, meaning which rader sees the objective (if any)
+ - num_range_finders for the proportional length of each range finder
+*/
+
 #include "raylib.h"
 #include "raymath.h"
 #include <stdio.h>
@@ -13,7 +26,9 @@ const float ANGULAR_SPEED = PI / 60;
 const float LINEAR_SPEED = 2.0f;
 const float RADAR_RANGE = 150.0f;
 
-const int DEBUG = 1;
+const int FRAME_SKIP = 4;
+
+const int DEBUG = 0;
 
 #define MAX_WALLS 20
 #define NUM_RANGE_FINDERS 5
@@ -50,7 +65,7 @@ typedef struct {
 
 typedef struct {
   Log log;
-  unsigned char *observations;
+  float *observations;
   int *actions;
   float *rewards;
   unsigned char *terminals;
@@ -62,7 +77,7 @@ typedef struct {
   Player player;
   RangeFinder range_finders[NUM_RANGE_FINDERS];
   Vector2 goal;
-  int goal_in_radar_num;
+  int radar_reading;
 } HardMaze;
 
 void add_log(HardMaze *env) {
@@ -108,7 +123,7 @@ void c_reset(HardMaze *env) {
   env->player = player;
 
   env->goal = (Vector2){120, 120};
-  env->goal_in_radar_num = -1;
+  env->radar_reading = -1;
 }
 
 int check_collisions(HardMaze *env) {
@@ -155,19 +170,19 @@ void update_range_finders(HardMaze *env) {
 }
 
 void update_radars(HardMaze *env) {
-  env->goal_in_radar_num = -1;
+  env->radar_reading = -1;
   float dist = Vector2Distance(env->player.pos, env->goal);
   if (dist < RADAR_RANGE) {
     float angle = Vector2Angle(env->player.forward,
                                Vector2Subtract(env->goal, env->player.pos));
     if (-3.0f * PI / 4.0f <= angle && angle < -PI / 4.0f)
-      env->goal_in_radar_num = 1;
+      env->radar_reading = 1;
     else if (-PI / 4.0f <= angle && angle < PI / 4.0f)
-      env->goal_in_radar_num = 2;
+      env->radar_reading = 2;
     else if (PI / 4.0f <= angle && angle < 3.0f * PI / 4.0f)
-      env->goal_in_radar_num = 3;
+      env->radar_reading = 3;
     else
-      env->goal_in_radar_num = 0;
+      env->radar_reading = 0;
   }
 }
 
@@ -206,14 +221,32 @@ void execute_action(HardMaze *env, int action) {
   check_reached_goal(env);
 }
 
+void compute_observations(HardMaze *env) {
+  int obs_idx = 0;
+
+  // player position normalized
+  env->observations[obs_idx++] = env->player.pos.x / 640.0f;
+  env->observations[obs_idx++] = env->player.pos.y / 640.0f;
+
+  // radar reading
+  env->observations[obs_idx++] = env->radar_reading / 3.0f;
+
+  // range finder readings
+  for (int i = 0; i < NUM_RANGE_FINDERS; i++) {
+    env->observations[obs_idx++] = env->range_finders[i].distance;
+  }
+}
+
 void c_step(HardMaze *env) {
   env->tick += 1;
 
   int action = env->actions[0];
   env->terminals[0] = 0;
-  env->rewards[0] = 0;
+  env->rewards[0] = -0.1f; // small penalty every step
 
   execute_action(env, action);
+  compute_observations(env);
+
   if (env->terminals[0]) {
     add_log(env);
     c_reset(env);
@@ -258,9 +291,10 @@ void draw_radars(HardMaze *env) {
   Color c;
 
   for (int i = 0; i < 4; i++) {
-    c = i == env->goal_in_radar_num ? ColorAlpha(RED, 0.4f)
-                                    : ColorAlpha(GRAY, 0.2f);
-    DrawRing(center, 0, RADAR_RANGE, player_angle + i * 90.0f - 45.0f,
+    c = i == env->radar_reading ? ColorAlpha(RED, 0.4f)
+                                : ColorAlpha(GRAY, 0.2f);
+    DrawRing(center, env->player.radius, RADAR_RANGE,
+             player_angle + i * 90.0f - 45.0f,
              player_angle + (i + 1) * 90.0f - 45.0f, 32, c);
 
     if (DEBUG) {

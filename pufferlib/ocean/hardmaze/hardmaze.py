@@ -6,17 +6,17 @@ from pufferlib.ocean.hardmaze import binding
 
 class HardMaze(pufferlib.PufferEnv):
     def __init__(self, num_envs=1, render_mode=None, log_interval=128, buf=None, seed=0):
-        obs_size = 5 # change later
+        obs_size = 2 + 1 + 5 # player pos + radar reading + range finder readings
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
-            shape=(obs_size,), dtype=np.uint8)
-        self.single_action_space = gymnasium.spaces.Discrete(4)
+            shape=(obs_size,), dtype=np.float32)
+        self.single_action_space = gymnasium.spaces.Discrete(4) # noop, left, forward, right
         self.render_mode = render_mode
         self.num_agents = num_envs
         self.log_interval = log_interval
 
         super().__init__(buf)
         self.c_envs = binding.vec_init(self.observations, self.actions, self.rewards,
-            self.terminals, self.truncations, num_envs, seed, size=size)
+            self.terminals, self.truncations, num_envs, seed)
  
     def reset(self, seed=0):
         binding.vec_reset(self.c_envs, seed)
@@ -60,4 +60,6 @@ if __name__ == '__main__':
         steps += N
         i += 1
 
-    print('HardMaze SPS:', int(steps / (time.time() - start)))
+
+    sps = int(steps / (time.time() - start))
+    print(f'HardMaze SPS: {sps:,}')

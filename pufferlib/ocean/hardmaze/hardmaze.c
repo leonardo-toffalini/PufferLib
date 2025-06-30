@@ -2,8 +2,7 @@
 
 int main() {
   HardMaze env = {};
-  env.observations =
-      (unsigned char *)calloc(env.size * env.size, sizeof(unsigned char));
+  env.observations = (float *)calloc(2 + 1 + 5, sizeof(float));
   env.actions = (int *)calloc(1, sizeof(int));
   env.rewards = (float *)calloc(1, sizeof(float));
   env.terminals = (unsigned char *)calloc(1, sizeof(unsigned char));
