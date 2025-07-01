@@ -14,12 +14,18 @@
 */
 
 #include "raylib.h"
+#include "raymath.h"
 #include <stdlib.h>
 #include <string.h>
 
 const unsigned char NOOP = 0;
 const unsigned char LEFT = 1;
 const unsigned char RIGHT = 2;
+
+const int CART_WIDTH = 60;
+const int CART_HEIGHT = 40;
+
+const float POLE_LENGHT = 100.0f;
 
 const Color PUFF_RED = (Color){187, 0, 0, 255};
 const Color PUFF_CYAN = (Color){0, 187, 187, 255};
@@ -57,14 +63,14 @@ void add_log(Dcp *env) {
   env->log.n++;
 }
 
-// Required function
 void c_reset(Dcp *env) {
   memset(env->observations, 0, 6 * sizeof(float));
   env->tick = 0;
-  env->q0 = 400.0f;
+  env->q0 = 620.0f;
+  env->q1 = PI / 6;
+  env->q2 = PI / 6;
 }
 
-// Required function
 void c_step(Dcp *env) {
   env->tick += 1;
 
@@ -82,10 +88,22 @@ void c_step(Dcp *env) {
 void draw_rail(Dcp *env) { DrawLine(20, 320, 1220, 320, PUFF_WHITE); }
 
 void draw_cart(Dcp *env) {
-  DrawRectangle(env->q0, 320 - 20, 60, 40, PUFF_CYAN);
+  DrawRectangle(env->q0 - CART_WIDTH / 2.0f, 320 - CART_HEIGHT / 2.0f,
+                CART_WIDTH, CART_HEIGHT, PUFF_CYAN);
+
+  Vector2 center = (Vector2){env->q0, 320};
+  Vector2 right_base = (Vector2){1.0f, 0.0f};
+  Vector2 pole1_end = Vector2Add(
+      center, Vector2Scale(Vector2Rotate(right_base, env->q1), POLE_LENGHT));
+  Vector2 pole2_end = Vector2Add(
+      pole1_end,
+      Vector2Scale(Vector2Rotate(right_base, env->q1 + env->q2), POLE_LENGHT));
+  DrawLineEx(center, pole1_end, 5, GREEN);
+  DrawLineEx(pole1_end, pole2_end, 5, YELLOW);
+  DrawCircleV(center, 7, PUFF_RED);
+  DrawCircleV(pole1_end, 5, PUFF_RED);
 }
 
-// Required function. Should handle creating the client on first call
 void c_render(Dcp *env) {
   if (!IsWindowReady()) {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
@@ -105,8 +123,6 @@ void c_render(Dcp *env) {
   EndDrawing();
 }
 
-// Required function. Should clean up anything you allocated
-// Do not free env->observations, actions, rewards, terminals
 void c_close(Dcp *env) {
   if (IsWindowReady()) {
     CloseWindow();
