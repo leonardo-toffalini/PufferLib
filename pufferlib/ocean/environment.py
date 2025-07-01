@@ -152,6 +152,7 @@ MAKE_FUNCTIONS = {
     'pacman': 'Pacman',
     'checkers': 'Checkers',
     'asteroids': 'Asteroids',
+    'dcp': 'Dcp',
     'spaces': make_spaces,
     'multiagent': make_multiagent,
 }
