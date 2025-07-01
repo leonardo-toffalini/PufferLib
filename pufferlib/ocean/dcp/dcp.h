@@ -67,8 +67,11 @@ void c_reset(Dcp *env) {
   memset(env->observations, 0, 6 * sizeof(float));
   env->tick = 0;
   env->q0 = 620.0f;
-  env->q1 = PI / 6;
+  env->q1 = PI / 4;
   env->q2 = PI / 6;
+  env->q0_dot = 0.0f;
+  env->q1_dot = 0.0f;
+  env->q2_dot = 0.0f;
 }
 
 void c_step(Dcp *env) {
@@ -104,6 +107,21 @@ void draw_cart(Dcp *env) {
   DrawCircleV(pole1_end, 5, PUFF_RED);
 }
 
+void draw_stats(Dcp *env) {
+  DrawText(TextFormat("Steps: %i", env->tick), 10, 10, 20, PUFF_WHITE);
+  DrawText(TextFormat("Position: %.2f", env->q0), 10, 40, 20, PUFF_WHITE);
+  DrawText(TextFormat("Angle 1: %.2f", env->q1 * 180.0f / M_PI), 10, 70, 20,
+           PUFF_WHITE);
+  DrawText(TextFormat("Angle 2: %.2f", env->q2 * 180.0f / M_PI), 10, 100, 20,
+           PUFF_WHITE);
+
+  DrawText(TextFormat("Vel: %.2f", env->q0_dot), 10, 550, 20, PUFF_WHITE);
+  DrawText(TextFormat("Omega 1: %.2f", env->q1_dot * 180.0f / M_PI), 10, 580,
+           20, PUFF_WHITE);
+  DrawText(TextFormat("Omega 2: %.2f", env->q2_dot * 180.0f / M_PI), 10, 610,
+           20, PUFF_WHITE);
+}
+
 void c_render(Dcp *env) {
   if (!IsWindowReady()) {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
@@ -119,6 +137,7 @@ void c_render(Dcp *env) {
   ClearBackground((Color){6, 24, 24, 255});
   draw_rail(env);
   draw_cart(env);
+  draw_stats(env);
 
   EndDrawing();
 }
