@@ -5,9 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef PI
-#define PI 3.14159265358979323846
-#endif
+const float MAX_PRICE = 1.0f;
+const float MAX_RISKY = 400.0f;
+const float MAX_RISKLESS = 400.0f;
 
 typedef struct {
   float perf;
@@ -56,10 +56,10 @@ double *sin_process(Invest *env) {
 
 void compute_observations(Invest *env) {
   int obs_idx = 0;
-  env->observations[obs_idx++] = (float)(env->T - env->tick) / env->T;
-  env->observations[obs_idx++] = env->prices[env->tick];
-  env->observations[obs_idx++] = env->riskless;
-  env->observations[obs_idx++] = env->risky;
+  env->observations[obs_idx++] = (float)env->tick / env->T;
+  env->observations[obs_idx++] = env->prices[env->tick] / MAX_PRICE;
+  env->observations[obs_idx++] = env->riskless / MAX_RISKLESS;
+  env->observations[obs_idx++] = env->risky / MAX_RISKY;
 }
 
 // Required function
