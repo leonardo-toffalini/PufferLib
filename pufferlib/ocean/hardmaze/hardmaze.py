@@ -5,7 +5,9 @@ import pufferlib
 from pufferlib.ocean.hardmaze import binding
 
 class HardMaze(pufferlib.PufferEnv):
-    def __init__(self, num_envs=1, render_mode=None, log_interval=128, buf=None, seed=0):
+    def __init__(self, num_envs=1, render_mode=None, log_interval=128, buf=None, seed=0,
+                 linear_speed=4.0, angular_speed=3.141592/30, radar_range=150,
+                 range_finder_len=60.0, frame_skip=1, max_ticks=1500):
         obs_size = 2 + 1 + 5 # player pos + radar reading + range finder readings
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
             shape=(obs_size,), dtype=np.float32)
@@ -16,7 +18,8 @@ class HardMaze(pufferlib.PufferEnv):
 
         super().__init__(buf)
         self.c_envs = binding.vec_init(self.observations, self.actions, self.rewards,
-            self.terminals, self.truncations, num_envs, seed)
+            self.terminals, self.truncations, num_envs, seed, linear_speed=linear_speed, angular_speed=angular_speed,
+            radar_range=radar_range, range_finder_len=range_finder_len, frame_skip=frame_skip, max_ticks=max_ticks)
  
     def reset(self, seed=0):
         binding.vec_reset(self.c_envs, seed)

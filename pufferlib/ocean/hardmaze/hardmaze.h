@@ -26,13 +26,6 @@ const unsigned char LEFT = 1;
 const unsigned char FORWARD = 2;
 const unsigned char RIGHT = 3;
 
-const float ANGULAR_SPEED = PI / 60;
-const float LINEAR_SPEED = 2.0f;
-const float RADAR_RANGE = 150.0f;
-
-const int FRAME_SKIP = 4;
-const int MAX_TICKS = 500;
-
 const int DEBUG = 0;
 
 #define MAX_WALLS 20
@@ -74,10 +67,18 @@ typedef struct {
   int *actions;
   float *rewards;
   unsigned char *terminals;
-  int size;
   int tick;
-  int r;
-  int c;
+
+  // env specific
+  // user settable
+  float linear_speed;
+  float angular_speed;
+  float radar_range;
+  float range_finder_len;
+  int frame_skip;
+  int max_ticks;
+
+  int size;
   Wall walls[MAX_WALLS];
   Player player;
   RangeFinder range_finders[NUM_RANGE_FINDERS];
@@ -114,7 +115,7 @@ void set_up_walls(HardMaze *env) {
 void set_up_range_finders(HardMaze *env) {
   float delta_angle = PI / (NUM_RANGE_FINDERS - 1);
   for (int i = 0; i < NUM_RANGE_FINDERS; i++) {
-    env->range_finders[i] = (RangeFinder){i * delta_angle, 40.0f, 1.0f};
+    env->range_finders[i] = (RangeFinder){i * delta_angle, env->range_finder_len, 1.0f};
   }
 }
 
@@ -177,7 +178,7 @@ void update_range_finders(HardMaze *env) {
 void update_radars(HardMaze *env) {
   env->radar_reading = -1;
   float dist = Vector2Distance(env->player.pos, env->goal);
-  if (dist < RADAR_RANGE) {
+  if (dist < env->radar_range) {
     float angle = Vector2Angle(env->player.forward,
                                Vector2Subtract(env->goal, env->player.pos));
     if (-3.0f * PI / 4.0f <= angle && angle < -PI / 4.0f)
@@ -203,16 +204,16 @@ void execute_action(HardMaze *env, int action) {
 
   switch (action) {
   case LEFT:
-    env->player.forward = Vector2Rotate(env->player.forward, -ANGULAR_SPEED);
-    env->player.angle -= ANGULAR_SPEED;
+    env->player.forward = Vector2Rotate(env->player.forward, -env->angular_speed);
+    env->player.angle -= env->angular_speed;
     break;
   case RIGHT:
-    env->player.forward = Vector2Rotate(env->player.forward, ANGULAR_SPEED);
-    env->player.angle += ANGULAR_SPEED;
+    env->player.forward = Vector2Rotate(env->player.forward, env->angular_speed);
+    env->player.angle += env->angular_speed;
     break;
   case FORWARD:
     env->player.pos = Vector2Add(
-        env->player.pos, Vector2Scale(env->player.forward, LINEAR_SPEED));
+        env->player.pos, Vector2Scale(env->player.forward, env->linear_speed));
   default:
     break;
   }
@@ -249,10 +250,12 @@ void c_step(HardMaze *env) {
   env->terminals[0] = 0;
   env->rewards[0] = -0.1f; // small penalty every step
 
-  execute_action(env, action);
+  for (int i = 0; i < env->frame_skip; i++)
+    execute_action(env, action);
+
   compute_observations(env);
 
-  if (env->terminals[0] || env->tick > MAX_TICKS) {
+  if (env->terminals[0] || env->tick > env->max_ticks) {
     add_log(env);
     c_reset(env);
     return;
@@ -298,7 +301,7 @@ void draw_radars(HardMaze *env) {
   for (int i = 0; i < 4; i++) {
     c = i == env->radar_reading ? ColorAlpha(RED, 0.4f)
                                 : ColorAlpha(GRAY, 0.2f);
-    DrawRing(center, env->player.radius, RADAR_RANGE,
+    DrawRing(center, env->player.radius, env->radar_range,
              player_angle + i * 90.0f - 45.0f,
              player_angle + (i + 1) * 90.0f - 45.0f, 32, c);
 
@@ -307,7 +310,7 @@ void draw_radars(HardMaze *env) {
                                 i * PI / 2.0f + env->player.angle - PI / 4.0f);
       DrawLineEx(
           Vector2Add(center, Vector2Scale(direction, env->player.radius)),
-          Vector2Add(center, Vector2Scale(direction, RADAR_RANGE)), 2,
+          Vector2Add(center, Vector2Scale(direction, env->radar_range)), 2,
           ColorAlpha(RED, 0.2f));
     }
   }

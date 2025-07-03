@@ -1,7 +1,11 @@
 #include "hardmaze.h"
 
 int main() {
-  HardMaze env = {};
+  HardMaze env = {
+    .linear_speed = 4.0f, .angular_speed = PI / 30.0f,
+    .radar_range = 150.0f, .range_finder_len = 60.0f,
+    .frame_skip = 1, .max_ticks = 1500,
+  };
   env.observations = (float *)calloc(2 + 1 + 5, sizeof(float));
   env.actions = (int *)calloc(1, sizeof(int));
   env.rewards = (float *)calloc(1, sizeof(float));
