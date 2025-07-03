@@ -25,15 +25,20 @@ typedef struct {
   unsigned char *terminals;
 
   // env specific
+  // can be defined
   int T;
   float H;
   int process_type;
-  int window_size;
+  int liquidate;
+  float friction_coef;
+  int friction_power;
+
   float riskless;
   float risky;
   double *prices;
   float *riskless_history;
   float *risky_history;
+
 
   int tick;
 } Invest;
@@ -88,7 +93,7 @@ void c_reset(Invest *env) {
 void execute_action(Invest *env, float action) {
   float price = env->prices[env->tick];
   env->risky += action;
-  env->riskless -= action * price;
+  env->riskless = env->riskless - env->friction_coef * action * price - env->friction_coef * pow(fabsf(action), env->friction_power);
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
@@ -111,7 +116,8 @@ void c_step(Invest *env) {
   execute_action(env, action);
 
   if (env->tick >= env->T) {
-    liquidate(env);
+    if (env->liquidate)
+      liquidate(env);
     env->rewards[0] = env->riskless;
     env->terminals[0] = 1;
     add_log(env);
@@ -144,8 +150,9 @@ void c_render(Invest *env) {
   Color dark_bg = (Color){20, 20, 20, 255};
   ClearBackground(dark_bg);
 
-  if (env->rewards[0] != 0)
-    printf("reward: %f\n", env->rewards[0]);
+  if (env->rewards[0] != 0) {
+    printf("reward (terminal riskless): %f\n", env->rewards[0]);
+  }
 
   // Draw axes
   Color axis_color = RAYWHITE;
@@ -181,8 +188,8 @@ void c_render(Invest *env) {
 
   // Draw price line (YELLOW), always in the middle half of the graph
   for (int i = 1; i <= env->tick; i++) {
-    float x1 = margin + (i - 1) * graph_width / (2.0f * env->T);
-    float x2 = margin + i * graph_width / (2.0f * env->T);
+    float x1 = margin + (i - 1) * graph_width / (float)env->T;
+    float x2 = margin + i * graph_width / (float)env->T;
 
     float norm1 =
         (env->prices[i - 1] - min_price) / (max_price_val - min_price + 1e-8f);
@@ -198,11 +205,11 @@ void c_render(Invest *env) {
 
   // Draw riskless asset line (SKYBLUE)
   for (int i = 1; i < env->tick; i++) {
-    float x1 = margin + (i - 1) * graph_width / (2.0f * env->T);
+    float x1 = margin + (i - 1) * graph_width / (float)env->T;
     float y1 = screen_height - margin -
                ((env->riskless_history[i - 1] - min_value) / value_range) *
                    graph_height;
-    float x2 = margin + i * graph_width / (2.0f * env->T);
+    float x2 = margin + i * graph_width / (float)env->T;
     float y2 =
         screen_height - margin -
         ((env->riskless_history[i] - min_value) / value_range) * graph_height;
@@ -211,11 +218,11 @@ void c_render(Invest *env) {
 
   // Draw risky asset line (LIME)
   for (int i = 1; i < env->tick; i++) {
-    float x1 = margin + (i - 1) * graph_width / (2.0f * env->T);
+    float x1 = margin + (i - 1) * graph_width / (float)env->T;
     float y1 =
         screen_height - margin -
         ((env->risky_history[i - 1] - min_value) / value_range) * graph_height;
-    float x2 = margin + i * graph_width / (2.0f * env->T);
+    float x2 = margin + i * graph_width / (float)env->T;
     float y2 =
         screen_height - margin -
         ((env->risky_history[i] - min_value) / value_range) * graph_height;

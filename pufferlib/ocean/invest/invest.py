@@ -14,7 +14,8 @@ def process_name_to_process_id(process_name: str):
 
 class Invest(pufferlib.PufferEnv):
     def __init__(self, num_envs=1, render_mode=None, log_interval=128, time_horizon=100,
-                 hurst=0.1, process_type="sin", buf=None, seed=0):
+                 hurst=0.1, process_type="fbm", liquidate=1, friction_coef=0.01,
+                 friction_power=2, buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
             shape=(4,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.Discrete(21)
@@ -26,7 +27,8 @@ class Invest(pufferlib.PufferEnv):
         super().__init__(buf)
         self.c_envs = binding.vec_init(self.observations, self.actions, self.rewards,
             self.terminals, self.truncations, num_envs, seed, time_horizon=time_horizon,
-            hurst=hurst, process_type=process_id)
+            hurst=hurst, process_type=process_id, liquidate=liquidate, friction_coef=friction_coef,
+            friction_power=friction_power)
  
     def reset(self, seed=0):
         binding.vec_reset(self.c_envs, seed)

@@ -7,6 +7,9 @@ static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
   env->T = unpack(kwargs, "time_horizon");
   env->H = unpack(kwargs, "hurst");
   env->process_type = unpack(kwargs, "process_type");
+  env->liquidate = unpack(kwargs, "liquidate");
+  env->friction_coef = unpack(kwargs, "friction_coef");
+  env->friction_power = unpack(kwargs, "friction_power");
   return 0;
 }
 
