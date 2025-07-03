@@ -47,8 +47,8 @@ void add_log(Invest *env) {
 }
 
 double *sin_process(Invest *env) {
-  double *process = malloc((env->T + 1) * sizeof(double));
-  for (int i = 0; i < env->T + 1; i++) {
+  double *process = malloc((2 * env->T + 1) * sizeof(double));
+  for (int i = 0; i < 2 * env->T + 1; i++) {
     process[i] = sin(2 * PI * i / env->T);
   }
   return process;
@@ -72,12 +72,12 @@ void c_reset(Invest *env) {
   if (env->process_type == 0)
     env->prices = sin_process(env);
   else
-    env->prices = simulate_fBm(env->H, env->T, env->T);
+    env->prices = simulate_fBm(env->H, 2 * env->T, 2 * env->T);
 
   if (env->riskless_history == NULL)
-    env->riskless_history = malloc((env->T + 1) * sizeof(float));
+    env->riskless_history = malloc((2 * env->T + 1) * sizeof(float));
   if (env->risky_history == NULL)
-    env->risky_history = malloc((env->T + 1) * sizeof(float));
+    env->risky_history = malloc((2 * env->T + 1) * sizeof(float));
 
   memset(env->riskless_history, 0, sizeof(*env->riskless_history));
   memset(env->risky_history, 0, sizeof(*env->risky_history));
@@ -85,27 +85,38 @@ void c_reset(Invest *env) {
   compute_observations(env);
 }
 
-void c_step(Invest *env) {
-  int action = env->actions[0] - 10;
-
-  env->terminals[0] = 0;
-  env->rewards[0] = 0;
-
+void execute_action(Invest *env, float action) {
   float price = env->prices[env->tick];
   env->risky += action;
   env->riskless -= action * price;
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
+  env->tick += 1;
+}
+
+void liquidate(Invest *env) {
+  float liquidation_step = -env->risky / (env->T + 1);
+  while (env->tick <= 2 * env->T) {
+    execute_action(env, liquidation_step);
+  }
+}
+
+void c_step(Invest *env) {
+  env->terminals[0] = 0;
+  env->rewards[0] = 0;
+
+  int action = env->actions[0] - 10;
+
+  execute_action(env, action);
 
   if (env->tick >= env->T) {
+    liquidate(env);
     env->rewards[0] = env->riskless;
     env->terminals[0] = 1;
     add_log(env);
     c_reset(env);
   }
-
-  env->tick += 1;
 
   compute_observations(env);
 }
@@ -170,8 +181,8 @@ void c_render(Invest *env) {
 
   // Draw price line (YELLOW), always in the middle half of the graph
   for (int i = 1; i <= env->tick; i++) {
-    float x1 = margin + (i - 1) * graph_width / (float)env->T;
-    float x2 = margin + i * graph_width / (float)env->T;
+    float x1 = margin + (i - 1) * graph_width / (2.0f * env->T);
+    float x2 = margin + i * graph_width / (2.0f * env->T);
 
     float norm1 =
         (env->prices[i - 1] - min_price) / (max_price_val - min_price + 1e-8f);
@@ -187,11 +198,11 @@ void c_render(Invest *env) {
 
   // Draw riskless asset line (SKYBLUE)
   for (int i = 1; i < env->tick; i++) {
-    float x1 = margin + (i - 1) * graph_width / (float)env->T;
+    float x1 = margin + (i - 1) * graph_width / (2.0f * env->T);
     float y1 = screen_height - margin -
                ((env->riskless_history[i - 1] - min_value) / value_range) *
                    graph_height;
-    float x2 = margin + i * graph_width / (float)env->T;
+    float x2 = margin + i * graph_width / (2.0f * env->T);
     float y2 =
         screen_height - margin -
         ((env->riskless_history[i] - min_value) / value_range) * graph_height;
@@ -200,11 +211,11 @@ void c_render(Invest *env) {
 
   // Draw risky asset line (LIME)
   for (int i = 1; i < env->tick; i++) {
-    float x1 = margin + (i - 1) * graph_width / (float)env->T;
+    float x1 = margin + (i - 1) * graph_width / (2.0f * env->T);
     float y1 =
         screen_height - margin -
         ((env->risky_history[i - 1] - min_value) / value_range) * graph_height;
-    float x2 = margin + i * graph_width / (float)env->T;
+    float x2 = margin + i * graph_width / (2.0f * env->T);
     float y2 =
         screen_height - margin -
         ((env->risky_history[i] - min_value) / value_range) * graph_height;
