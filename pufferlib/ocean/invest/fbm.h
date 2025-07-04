@@ -92,9 +92,6 @@ double r_k(double H, int k) {
 
 // Fractional Brownian motion generator
 double *simulate_fBm(double H, int n, double T) {
-  // Seed random number generator
-  srand((unsigned int)time(NULL));
-
   // Adjust to power-of-two size
   if ((n & (n - 1)) != 0 || n < 2) {
     n = next_power_of_2(n);
@@ -112,6 +109,7 @@ double *simulate_fBm(double H, int n, double T) {
   for (int k = 0; k < n; k++) {
     c[k] = r_k(H, k);
   }
+  c[n] = r_k(H, n);
   for (int k = 1; k < n; k++) {
     c[2 * n - k] = c[k];
   }

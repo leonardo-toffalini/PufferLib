@@ -73,6 +73,8 @@ void c_reset(Invest *env) {
   env->riskless = 0;
   env->risky = 0;
 
+  srand(time(NULL));
+
   // simulate_fBm(env->H, env->T, env->T);
   if (env->process_type == 0)
     env->prices = sin_process(env);
