@@ -3,7 +3,7 @@
 int main() {
   Invest env = {
     .T = 128, .H = 0.1, .process_type = 1, .liquidate = 1,
-    .friction_coef = 0.01f, .friction_power = 2
+    .friction_coef = 0.01f, .friction_power = 2, .liq_type = 0
   };
   env.observations = (float *)calloc(1, sizeof(float));
   env.actions = (int *)calloc(1, sizeof(int));

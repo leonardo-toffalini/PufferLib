@@ -30,6 +30,7 @@ typedef struct {
   float H;
   int process_type;
   int liquidate;
+  int liq_type;
   float friction_coef;
   int friction_power;
 
@@ -102,10 +103,20 @@ void execute_action(Invest *env, float action) {
   env->tick += 1;
 }
 
-void liquidate(Invest *env) {
+void liquidate(Invest *env, int liq_type) {
   float liquidation_step = -env->risky / (env->T + 1);
-  while (env->tick <= 2 * env->T) {
-    execute_action(env, liquidation_step);
+  switch (liq_type) {
+    case 0:
+      execute_action(env, -env->risky);
+      break;
+    case 1:
+      while (env->tick <= 2 * env->T) {
+        execute_action(env, liquidation_step);
+      }
+      break;
+    default:
+      execute_action(env, -env->risky);
+      break;
   }
 }
 
@@ -119,7 +130,7 @@ void c_step(Invest *env) {
 
   if (env->tick >= env->T) {
     if (env->liquidate)
-      liquidate(env);
+      liquidate(env, env->liq_type);
     env->rewards[0] = env->riskless;
     env->terminals[0] = 1;
     add_log(env);
