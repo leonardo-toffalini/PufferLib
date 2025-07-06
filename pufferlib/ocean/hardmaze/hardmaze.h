@@ -162,7 +162,7 @@ int check_collisions(HardMaze *env) {
 void update_range_finders(HardMaze *env) {
   RangeFinder rf;
   Wall w;
-  Vector2 collision_point, direction, end;
+  Vector2 collision_point, direction, end, rf_base;
   Vector2 base_vec = (Vector2){0.0f, 1.0f};
   Vector2 center = env->player.pos;
   float dist;
@@ -175,14 +175,15 @@ void update_range_finders(HardMaze *env) {
       w = env->walls[j];
 
       direction = Vector2Rotate(base_vec, rf.angle + env->player.angle);
+      rf_base = Vector2Add(center, Vector2Scale(direction, env->player.radius));
 
-      end = Vector2Add(center, Vector2Scale(direction, rf.max_range));
-      if (!CheckCollisionLines(center, end, (Vector2){w.ax, w.ay},
+      end = Vector2Add(rf_base, Vector2Scale(direction, rf.max_range));
+      if (!CheckCollisionLines(rf_base, end, (Vector2){w.ax, w.ay},
                                (Vector2){w.bx, w.by}, &collision_point))
         continue;
 
-      dist = Vector2Distance(collision_point, center) / rf.max_range;
-      if (dist < rf.distance) {
+      dist = Vector2Distance(collision_point, rf_base) / rf.max_range;
+      if (dist <= rf.distance) {
         env->range_finders[i].distance = dist;
       }
     }
@@ -248,13 +249,23 @@ void compute_observations(HardMaze *env) {
   env->observations[obs_idx++] = env->player.pos.x / 640.0f;
   env->observations[obs_idx++] = env->player.pos.y / 640.0f;
 
-  // radar reading
-  env->observations[obs_idx++] = env->radar_reading / 3.0f;
-
   // range finder readings
   for (int i = 0; i < NUM_RANGE_FINDERS; i++) {
     env->observations[obs_idx++] = env->range_finders[i].distance;
   }
+
+  // radar reading
+  for (int i = 0; i < 4; i++) {
+    env->observations[obs_idx++] = env->radar_reading == i ? 1 : 0;
+  }
+}
+
+void print_observations(HardMaze *env) {
+  printf("obs = [");
+  for (int i = 0; i < 11; i++) {
+    printf("%.4f, ", env->observations[i]);
+  }
+  printf("]\n");
 }
 
 void c_step(HardMaze *env) {
@@ -294,14 +305,22 @@ void draw_range_finders(HardMaze *env) {
   Vector2 center = env->player.pos;
   Vector2 base_vec = (Vector2){0.0f, 1.0f};
   Vector2 direction;
+  Vector2 rf_base;
   RangeFinder rf;
   for (int i = 0; i < NUM_RANGE_FINDERS; i++) {
     rf = env->range_finders[i];
     direction = Vector2Rotate(base_vec, rf.angle + env->player.angle);
+    rf_base = Vector2Add(center, Vector2Scale(direction, env->player.radius));
     DrawLineEx(
-        Vector2Add(center, Vector2Scale(direction, env->player.radius)),
-        Vector2Add(center, Vector2Scale(direction, rf.distance * rf.max_range)),
-        2, GREEN);
+      rf_base,
+      Vector2Add(
+        rf_base,
+        Vector2Scale(
+          direction,
+          rf.distance * rf.max_range
+        )
+      ),
+      2, GREEN);
   }
 }
 

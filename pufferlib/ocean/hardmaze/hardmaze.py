@@ -8,7 +8,7 @@ class HardMaze(pufferlib.PufferEnv):
     def __init__(self, num_envs=1, render_mode=None, log_interval=128, buf=None, seed=0,
                  linear_speed=4.0, angular_speed=3.141592/30, radar_range=150,
                  range_finder_len=60.0, frame_skip=1, max_ticks=1500):
-        obs_size = 2 + 1 + 5 # player pos + radar reading + range finder readings
+        obs_size = 2 + 5 + 4 # player pos (2) + range finder readings (5) + radar readings one hot (4)
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
             shape=(obs_size,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.Discrete(4) # noop, left, forward, right
@@ -59,10 +59,11 @@ if __name__ == '__main__':
     import time
     start = time.time()
     while time.time() - start < 10:
+        # obs, rew, term, trunc, info = env.step(actions[i % CACHE])
+        # print(obs)
         env.step(actions[i % CACHE])
         steps += N
         i += 1
-
 
     sps = int(steps / (time.time() - start))
     print(f'HardMaze SPS: {sps:,}')
