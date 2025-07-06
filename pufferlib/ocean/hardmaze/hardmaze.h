@@ -83,6 +83,7 @@ typedef struct {
   Player player;
   RangeFinder range_finders[NUM_RANGE_FINDERS];
   Vector2 goal;
+  Vector2 pois[10];
   int radar_reading;
 } HardMaze;
 
@@ -119,9 +120,22 @@ void set_up_range_finders(HardMaze *env) {
   }
 }
 
+void set_up_pois(HardMaze *env) {
+  int idx = 0;
+
+  env->pois[idx++] = (Vector2){320, 450};
+  env->pois[idx++] = (Vector2){480, 530};
+  env->pois[idx++] = (Vector2){480, 420};
+  env->pois[idx++] = (Vector2){300, 300};
+  env->pois[idx++] = (Vector2){350, 200};
+  env->pois[idx++] = (Vector2){400, 100};
+  env->pois[idx++] = (Vector2){250, 115};
+}
+
 void c_reset(HardMaze *env) {
   set_up_walls(env);
   set_up_range_finders(env);
+  set_up_pois(env);
 
   Player player = {
       (Vector2){100.0f, 540.0f}, (Vector2){0.0f, -1.0f}, PI / 2, 10.0f, 100.0f,
@@ -316,6 +330,14 @@ void draw_radars(HardMaze *env) {
   }
 }
 
+void draw_pois(HardMaze *env) {
+  int r = 5;
+  for (int i = 0; i < 10; i++) {
+    DrawRing(env->pois[i], r - 2, r, 0, 360, 64, BLACK);
+    DrawCircleV(env->pois[i], r - 2, BLUE);
+  }
+}
+
 void draw_goal(HardMaze *env) {
   int r = 5;
   DrawRing(env->goal, r - 2, r, 0, 360, 64, BLACK);
@@ -336,11 +358,15 @@ void c_render(HardMaze *env) {
   BeginDrawing();
   ClearBackground(RAYWHITE);
 
+  if (DEBUG)
+    print_observations(env);
+
   draw_walls(env);
-  draw_player(env);
   draw_range_finders(env);
   draw_radars(env);
+  draw_pois(env);
   draw_goal(env);
+  draw_player(env);
 
   EndDrawing();
 }
