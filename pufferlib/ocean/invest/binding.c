@@ -10,6 +10,7 @@ static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
   env->liquidate = unpack(kwargs, "liquidate");
   env->friction_coef = unpack(kwargs, "friction_coef");
   env->friction_power = unpack(kwargs, "friction_power");
+  env->price_window_size = unpack(kwargs, "price_window_size");
   return 0;
 }
 

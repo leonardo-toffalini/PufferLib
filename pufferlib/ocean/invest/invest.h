@@ -33,6 +33,7 @@ typedef struct {
   int liq_type;
   float friction_coef;
   int friction_power;
+  int price_window_size;
 
   float riskless;
   float risky;
@@ -66,8 +67,7 @@ void compute_observations(Invest *env) {
   env->observations[obs_idx++] = env->riskless / MAX_RISKLESS;
   env->observations[obs_idx++] = env->risky / MAX_RISKY;
 
-  const int price_window_size = 32;
-  for (int i = 0; i < price_window_size; i++) {
+  for (int i = 0; i < env->price_window_size; i++) {
     if (env->tick - i >= 0) {
       env->observations[obs_idx++] = env->prices[env->tick - i] / MAX_PRICE;
     } else {
@@ -81,6 +81,11 @@ void c_reset(Invest *env) {
   env->tick = 0;
   env->riskless = 0;
   env->risky = 0;
+
+  // Set default price_window_size if not already set
+  if (env->price_window_size <= 0) {
+    env->price_window_size = 32;
+  }
 
   srand(time(NULL));
 
