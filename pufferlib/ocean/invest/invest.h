@@ -40,7 +40,6 @@ typedef struct {
   float *riskless_history;
   float *risky_history;
 
-
   int tick;
 } Invest;
 
@@ -96,27 +95,29 @@ void c_reset(Invest *env) {
 void execute_action(Invest *env, float action) {
   float price = env->prices[env->tick];
   env->risky += action;
-  env->riskless = env->riskless - env->friction_coef * action * price - env->friction_coef * pow(fabsf(action), env->friction_power);
+  env->riskless = env->riskless - env->friction_coef * action * price -
+                  env->friction_coef * pow(fabsf(action), env->friction_power);
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
+  env->rewards[0] = env->riskless + price * env->riskless;
   env->tick += 1;
 }
 
 void liquidate(Invest *env, int liq_type) {
   float liquidation_step = -env->risky / (env->T + 1);
   switch (liq_type) {
-    case 0:
-      execute_action(env, -env->risky);
-      break;
-    case 1:
-      while (env->tick <= 2 * env->T) {
-        execute_action(env, liquidation_step);
-      }
-      break;
-    default:
-      execute_action(env, -env->risky);
-      break;
+  case 0:
+    execute_action(env, -env->risky);
+    break;
+  case 1:
+    while (env->tick <= 2 * env->T) {
+      execute_action(env, liquidation_step);
+    }
+    break;
+  default:
+    execute_action(env, -env->risky);
+    break;
   }
 }
 
@@ -131,7 +132,7 @@ void c_step(Invest *env) {
   if (env->tick >= env->T) {
     if (env->liquidate)
       liquidate(env, env->liq_type);
-    env->rewards[0] = env->riskless;
+    // env->rewards[0] = env->riskless;
     env->terminals[0] = 1;
     add_log(env);
     c_reset(env);
@@ -163,9 +164,9 @@ void c_render(Invest *env) {
   Color dark_bg = (Color){20, 20, 20, 255};
   ClearBackground(dark_bg);
 
-  if (env->rewards[0] != 0) {
-    printf("reward (terminal riskless): %f\n", env->rewards[0]);
-  }
+  // if (env->rewards[0] != 0) {
+  //   printf("reward (terminal riskless): %f\n", env->rewards[0]);
+  // }
 
   // Draw axes
   Color axis_color = RAYWHITE;
