@@ -17,7 +17,7 @@ class Invest(pufferlib.PufferEnv):
                  hurst=0.1, process_type="fbm", liquidate=1, friction_coef=0.01,
                  friction_power=2, liq_type=0, buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
-            shape=(4,), dtype=np.float32)
+            shape=(4 + 32,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.Discrete(21)
         self.render_mode = render_mode
         self.num_agents = num_envs

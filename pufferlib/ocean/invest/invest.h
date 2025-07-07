@@ -65,6 +65,15 @@ void compute_observations(Invest *env) {
   env->observations[obs_idx++] = env->prices[env->tick] / MAX_PRICE;
   env->observations[obs_idx++] = env->riskless / MAX_RISKLESS;
   env->observations[obs_idx++] = env->risky / MAX_RISKY;
+
+  const int price_window_size = 32;
+  for (int i = 0; i < price_window_size; i++) {
+    if (env->tick - i >= 0) {
+      env->observations[obs_idx++] = env->prices[env->tick - i] / MAX_PRICE;
+    } else {
+      env->observations[obs_idx++] = 0;
+    }
+  }
 }
 
 // Required function
@@ -100,7 +109,7 @@ void execute_action(Invest *env, float action) {
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
-  env->rewards[0] = env->riskless + price * env->riskless;
+  env->rewards[0] = (env->riskless + price * env->riskless) / 100;
   env->tick += 1;
 }
 
