@@ -9,7 +9,7 @@ int main() {
                 .friction_power = 2,
                 .liq_type = 0,
                 .price_window_size = 32};
-  env.observations = (float *)calloc(1, sizeof(float));
+  env.observations = (float *)calloc(36, sizeof(float));
   env.actions = (int *)calloc(1, sizeof(int));
   env.rewards = (float *)calloc(1, sizeof(float));
   env.terminals = (unsigned char *)calloc(1, sizeof(unsigned char));
@@ -21,12 +21,12 @@ int main() {
       if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) {
         env.actions[0] = 0;
       } else if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) {
-        env.actions[0] = 1;
+        env.actions[0] = 2;
       } else {
-        env.actions[0] = -1;
+        env.actions[0] = 1;
       }
     } else {
-      env.actions[0] = rand() % 21;
+      env.actions[0] = rand() % 3;
     }
     c_step(&env);
     c_render(&env);

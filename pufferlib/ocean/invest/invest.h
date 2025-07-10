@@ -139,7 +139,7 @@ void c_step(Invest *env) {
   env->terminals[0] = 0;
   env->rewards[0] = 0;
 
-  int action = env->actions[0] - 10;
+  int action = env->actions[0] - 1;
 
   execute_action(env, action);
 
@@ -167,7 +167,7 @@ void c_render(Invest *env) {
   if (!window_initialized) {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(screen_width, screen_height, "Investment Simulation");
-    SetTargetFPS(30);
+    SetTargetFPS(15);
     window_initialized = true;
   }
 

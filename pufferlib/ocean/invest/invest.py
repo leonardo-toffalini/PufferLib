@@ -16,9 +16,9 @@ class Invest(pufferlib.PufferEnv):
     def __init__(self, num_envs=1, render_mode=None, log_interval=128, time_horizon=100,
                  hurst=0.1, process_type="fbm", liquidate=1, friction_coef=0.01,
                  friction_power=2, liq_type=0, price_window_size=32, buf=None, seed=0):
-        self.single_observation_space = gymnasium.spaces.Box(low=0, high=1,
+        self.single_observation_space = gymnasium.spaces.Box(low=-1, high=1,
             shape=(4 + price_window_size,), dtype=np.float32)
-        self.single_action_space = gymnasium.spaces.Discrete(21)
+        self.single_action_space = gymnasium.spaces.Discrete(3)
         self.render_mode = render_mode
         self.num_agents = num_envs
 
@@ -48,7 +48,7 @@ class Invest(pufferlib.PufferEnv):
         binding.vec_close(self.c_envs)
 
 if __name__ == '__main__':
-    N = 2048
+    N = 1
     env = Invest(num_envs=N)
     env.reset()
     steps = 0
@@ -59,10 +59,11 @@ if __name__ == '__main__':
     import time
     start = time.time()
     while time.time() - start < 10:
-        env.step(actions[steps % CACHE])
-        # obs, rewards, terminals, truncations, info = env.step(actions[steps % CACHE])
-        # print(obs)
-        # input("Press enter to continue...")
+        # env.step(actions[steps % CACHE])
+        obs, rewards, terminals, truncations, info = env.step(actions[steps % CACHE])
+        print(f"price: {obs[0][1]:.4f}, riskless: {obs[0][2]:.4f}")
+        # print(rewards[0])
+        input()
         steps += 1
 
     sps = int(env.num_agents * steps / (time.time() - start))
