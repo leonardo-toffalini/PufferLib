@@ -115,7 +115,7 @@ void execute_action(Invest *env, float action) {
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
-  env->rewards[0] = (env->riskless + price * env->riskless) / 100;
+  env->rewards[0] = (env->riskless + price * env->risky) / 100;
   env->tick += 1;
 }
 
