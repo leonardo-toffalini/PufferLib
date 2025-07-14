@@ -87,7 +87,18 @@ void c_reset(Invest *env) {
     env->price_window_size = 32;
   }
 
-  srand(time(NULL));
+  // Seed RNG only once
+  static int rng_seeded = 0;
+  if (!rng_seeded) {
+    srand(time(NULL));
+    rng_seeded = 1;
+  }
+
+  // Free old prices array to avoid memory leak
+  if (env->prices != NULL) {
+    free(env->prices);
+    env->prices = NULL;
+  }
 
   // simulate_fBm(env->H, env->T, env->T);
   if (env->process_type == 0)
@@ -100,8 +111,9 @@ void c_reset(Invest *env) {
   if (env->risky_history == NULL)
     env->risky_history = malloc((2 * env->T + 1) * sizeof(float));
 
-  memset(env->riskless_history, 0, sizeof(*env->riskless_history));
-  memset(env->risky_history, 0, sizeof(*env->risky_history));
+  // Correct memset to initialize the full array
+  memset(env->riskless_history, 0, (2 * env->T + 1) * sizeof(float));
+  memset(env->risky_history, 0, (2 * env->T + 1) * sizeof(float));
 
   compute_observations(env);
 }
@@ -126,6 +138,8 @@ void liquidate(Invest *env, int liq_type) {
     execute_action(env, -env->risky);
     break;
   case 1:
+    // NOTE: Only the last reward from execute_action will be kept in env->rewards[0].
+    // If you want to accumulate rewards over the liquidation steps, you must change this logic.
     while (env->tick <= 2 * env->T) {
       execute_action(env, liquidation_step);
     }

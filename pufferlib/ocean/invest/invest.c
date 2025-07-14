@@ -3,7 +3,7 @@
 int main() {
   Invest env = {.T = 128,
                 .H = 0.1,
-                .process_type = 1,
+                .process_type = 0,
                 .liquidate = 1,
                 .friction_coef = 0.01f,
                 .friction_power = 2,
