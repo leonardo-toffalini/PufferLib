@@ -120,14 +120,17 @@ void c_reset(Invest *env) {
 
 void execute_action(Invest *env, float action) {
   float price = 10.0f * env->prices[env->tick];
+  float prev_risky = env->risky;
+  float prev_riskless = env->riskless;
+
   env->risky += action;
-  // env->riskless = env->riskless - action * price;
   env->riskless = env->riskless - action * price -
                   env->friction_coef * pow(fabsf(action), env->friction_power);
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
-  env->rewards[0] = (env->riskless + price * env->risky) / 100;
+  // env->rewards[0] = (env->riskless + price * env->risky) / 100;
+  env->rewards[0] = env->riskless - prev_riskless;
   env->tick += 1;
 }
 
