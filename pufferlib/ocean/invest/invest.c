@@ -5,9 +5,9 @@ int main() {
                 .H = 0.1,
                 .process_type = 0,
                 .liquidate = 1,
+                .liq_type = 1,
                 .friction_coef = 0.01f,
                 .friction_power = 2,
-                .liq_type = 0,
                 .price_window_size = 32};
   env.observations = (float *)calloc(36, sizeof(float));
   env.actions = (int *)calloc(1, sizeof(int));

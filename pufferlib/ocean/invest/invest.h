@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+// #include <assert.h>
 
 const float MAX_PRICE = 1.0f;
 const float MAX_RISKY = 400.0f;
@@ -119,9 +120,12 @@ void c_reset(Invest *env) {
 }
 
 void execute_action(Invest *env, float action) {
+  float prev_price =
+      env->tick > 0 ? env->prices[env->tick - 1] : env->prices[0];
   float price = 10.0f * env->prices[env->tick];
   float prev_risky = env->risky;
   float prev_riskless = env->riskless;
+  float prev_comb = prev_riskless + prev_price * prev_risky;
 
   env->risky += action;
   env->riskless = env->riskless - action * price -
@@ -129,8 +133,15 @@ void execute_action(Invest *env, float action) {
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
-  // env->rewards[0] = (env->riskless + price * env->risky) / 100;
-  env->rewards[0] = env->riskless - prev_riskless;
+  float comb = env->riskless + price * env->risky;
+
+  // MAKE SURE TO PUT IN TERMINAL REWARD IF ALL IS COMMENTED OUT
+  // env->rewards[0] = comb / 100; // comb normalized
+  env->rewards[0] = env->riskless - prev_riskless; // delta riskless
+  // env->rewards[0] = comb - prev_comb; // delta comb
+  // env->rewards[0] = env->riskless - prev_riskless +
+  //                   (price * env->risky) / 100; // delta riskless penalized
+
   env->tick += 1;
 }
 
@@ -141,8 +152,6 @@ void liquidate(Invest *env, int liq_type) {
     execute_action(env, -env->risky);
     break;
   case 1:
-    // NOTE: Only the last reward from execute_action will be kept in env->rewards[0].
-    // If you want to accumulate rewards over the liquidation steps, you must change this logic.
     while (env->tick <= 2 * env->T) {
       execute_action(env, liquidation_step);
     }
@@ -162,9 +171,14 @@ void c_step(Invest *env) {
   execute_action(env, action);
 
   if (env->tick >= env->T) {
-    if (env->liquidate)
+    if (env->liquidate) {
       liquidate(env, env->liq_type);
-    // env->rewards[0] = env->riskless;
+      if (fabs(env->risky) > 0.001) {
+        printf("expected env->risky < 0.001, got %f\n", env->risky);
+        exit(1);
+      }
+    }
+    env->rewards[0] = env->riskless / MAX_RISKLESS;
     env->terminals[0] = 1;
     add_log(env);
     c_reset(env);
@@ -196,9 +210,9 @@ void c_render(Invest *env) {
   Color dark_bg = (Color){20, 20, 20, 255};
   ClearBackground(dark_bg);
 
-  // if (env->rewards[0] != 0) {
-  //   printf("reward (terminal riskless): %f\n", env->rewards[0]);
-  // }
+  if (env->terminals[0] == 1) {
+    printf("reward (terminal riskless): %f\n", MAX_RISKLESS * env->rewards[0]);
+  }
 
   // Draw axes
   Color axis_color = RAYWHITE;
