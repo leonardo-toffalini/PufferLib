@@ -186,7 +186,7 @@ void c_step(Invest *env) {
 
   if (env->tick >= env->T) {
     if (env->liquidate) {
-      liquidate(env, env->liq_type);
+      liquidate(env);
       if (fabs(env->risky) > 0.001) {
         printf("expected env->risky < 0.001, got %f\n", env->risky);
         exit(1);
