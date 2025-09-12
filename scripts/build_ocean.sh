@@ -74,7 +74,6 @@ FLAGS=(
     $LINK_ARCHIVES
     -lm
     -lpthread
-    -ferror-limit=3
     -DPLATFORM_DESKTOP
 )
 
@@ -98,10 +97,10 @@ if [ "$MODE" = "local" ]; then
             -fno-omit-frame-pointer
         )
     fi  
-    clang -g -O0 ${FLAGS[@]}
+    gcc -g -O0 ${FLAGS[@]}
 elif [ "$MODE" = "fast" ]; then
     echo "Building optimized $ENV for local testing..."
-    clang -pg -O2 -DNDEBUG ${FLAGS[@]}
+    gcc -pg -O2 -DNDEBUG ${FLAGS[@]}
     echo "Built to: $ENV"
 else
     echo "Invalid mode specified: local|fast|web"

@@ -21,12 +21,12 @@ int main() {
       if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) {
         env.actions[0] = 0;
       } else if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) {
-        env.actions[0] = 2;
+        env.actions[0] = 20;
       } else {
-        env.actions[0] = 1;
+        env.actions[0] = 10;
       }
     } else {
-      env.actions[0] = rand() % 3;
+      env.actions[0] = rand() % 21;
     }
     c_step(&env);
     c_render(&env);

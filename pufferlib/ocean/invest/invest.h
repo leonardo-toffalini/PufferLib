@@ -15,6 +15,10 @@ typedef struct {
   float score;
   float episode_return;
   float episode_length;
+  float terminal_risky;
+  float terminal_riskless;
+  float pre_terminal_risky;
+  float pre_terminal_riskless;
   float n;
 } Log;
 
@@ -48,13 +52,21 @@ typedef struct {
 void add_log(Invest *env) {
   env->log.perf += (env->rewards[0] > 0) ? 1 : 0;
   env->log.score += env->rewards[0] > 0 ? 1 : 0;
+  env->log.terminal_risky += env->risky;
+  env->log.terminal_riskless += env->riskless;
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
   env->log.n++;
 }
 
+void add_pre_terminal_log(Invest *env) {
+  env->log.pre_terminal_risky = env->risky;
+  env->log.pre_terminal_riskless = env->riskless;
+}
+
+// TODO:  try with random phase, random amplitude, and random number of peeks
 double *sin_process(Invest *env) {
-  double *process = malloc((2 * env->T + 1) * sizeof(double));
+  double *process = (double *)malloc((2 * env->T + 1) * sizeof(double));
   for (int i = 0; i < 2 * env->T + 1; i++) {
     process[i] = sin(2 * PI * i / env->T);
   }
@@ -108,9 +120,9 @@ void c_reset(Invest *env) {
     env->prices = simulate_fBm(env->H, 2 * env->T, 2 * env->T);
 
   if (env->riskless_history == NULL)
-    env->riskless_history = malloc((2 * env->T + 1) * sizeof(float));
+    env->riskless_history = (float *)malloc((2 * env->T + 1) * sizeof(float));
   if (env->risky_history == NULL)
-    env->risky_history = malloc((2 * env->T + 1) * sizeof(float));
+    env->risky_history = (float *)malloc((2 * env->T + 1) * sizeof(float));
 
   // Correct memset to initialize the full array
   memset(env->riskless_history, 0, (2 * env->T + 1) * sizeof(float));
@@ -145,10 +157,11 @@ void execute_action(Invest *env, float action) {
   env->tick += 1;
 }
 
-void liquidate(Invest *env, int liq_type) {
+void liquidate(Invest *env) {
   float liquidation_step = -env->risky / (env->T + 1);
-  switch (liq_type) {
+  switch (env->liq_type) {
   case 0:
+    // liquidate entire position in a single step
     execute_action(env, -env->risky);
     break;
   case 1:
@@ -166,7 +179,8 @@ void c_step(Invest *env) {
   env->terminals[0] = 0;
   env->rewards[0] = 0;
 
-  int action = env->actions[0] - 1;
+  int action = env->actions[0] - 10; // {0, 1, ..., 20} -> {-10, ..., 0, ..., 10}
+  // int action = env->actions[0] - 1; // {0, 1, 2} -> {-1, 0, 1}
 
   execute_action(env, action);
 
@@ -216,8 +230,7 @@ void c_render(Invest *env) {
 
   // Draw axes
   Color axis_color = RAYWHITE;
-  DrawLine(margin, screen_height - margin, screen_width - margin,
-           screen_height - margin, axis_color);
+  DrawLine(margin, screen_height - margin, screen_width - margin, screen_height - margin, axis_color);
   DrawLine(margin, margin, margin, screen_height - margin, axis_color);
 
   float max_price = 0;
@@ -227,10 +240,8 @@ void c_render(Invest *env) {
   float max_price_val = env->prices[0];
   for (int i = 0; i <= env->tick; i++) {
     max_price = fmaxf(max_price, env->prices[i]);
-    max_assets = fmaxf(max_assets,
-                       fmaxf(env->riskless_history[i], env->risky_history[i]));
-    min_value = fminf(min_value,
-                      fminf(env->riskless_history[i], env->risky_history[i]));
+    max_assets = fmaxf(max_assets, fmaxf(env->riskless_history[i], env->risky_history[i]));
+    min_value = fminf(min_value, fminf(env->riskless_history[i], env->risky_history[i]));
     if (env->prices[i] < min_price)
       min_price = env->prices[i];
     if (env->prices[i] > max_price_val)
@@ -251,10 +262,8 @@ void c_render(Invest *env) {
     float x1 = margin + (i - 1) * graph_width / (float)env->T;
     float x2 = margin + i * graph_width / (float)env->T;
 
-    float norm1 =
-        (env->prices[i - 1] - min_price) / (max_price_val - min_price + 1e-8f);
-    float norm2 =
-        (env->prices[i] - min_price) / (max_price_val - min_price + 1e-8f);
+    float norm1 = (env->prices[i - 1] - min_price) / (max_price_val - min_price + 1e-8f);
+    float norm2 = (env->prices[i] - min_price) / (max_price_val - min_price + 1e-8f);
 
     // Map to 25% - 75% of the graph height
     float y1 = screen_height - margin - (0.25f + 0.5f * norm1) * graph_height;
@@ -266,36 +275,25 @@ void c_render(Invest *env) {
   // Draw riskless asset line (SKYBLUE)
   for (int i = 1; i < env->tick; i++) {
     float x1 = margin + (i - 1) * graph_width / (float)env->T;
-    float y1 = screen_height - margin -
-               ((env->riskless_history[i - 1] - min_value) / value_range) *
-                   graph_height;
+    float y1 = screen_height - margin - ((env->riskless_history[i - 1] - min_value) / value_range) * graph_height;
     float x2 = margin + i * graph_width / (float)env->T;
-    float y2 =
-        screen_height - margin -
-        ((env->riskless_history[i] - min_value) / value_range) * graph_height;
+    float y2 = screen_height - margin - ((env->riskless_history[i] - min_value) / value_range) * graph_height;
     DrawLine(x1, y1, x2, y2, riskless_color);
   }
 
   // Draw risky asset line (LIME)
   for (int i = 1; i < env->tick; i++) {
     float x1 = margin + (i - 1) * graph_width / (float)env->T;
-    float y1 =
-        screen_height - margin -
-        ((env->risky_history[i - 1] - min_value) / value_range) * graph_height;
+    float y1 = screen_height - margin - ((env->risky_history[i - 1] - min_value) / value_range) * graph_height;
     float x2 = margin + i * graph_width / (float)env->T;
-    float y2 =
-        screen_height - margin -
-        ((env->risky_history[i] - min_value) / value_range) * graph_height;
+    float y2 = screen_height - margin - ((env->risky_history[i] - min_value) / value_range) * graph_height;
     DrawLine(x1, y1, x2, y2, risky_color);
   }
 
   // Draw current values
-  DrawText(TextFormat("Price: %.2f", env->prices[env->tick]),
-           screen_width - 200, margin - 20, 20, price_color);
-  DrawText(TextFormat("Riskless: %.2f", env->riskless), screen_width - 200,
-           margin, 20, riskless_color);
-  DrawText(TextFormat("Risky: %.2f", env->risky), screen_width - 200,
-           margin + 20, 20, risky_color);
+  DrawText(TextFormat("Price: %.2f", env->prices[env->tick]), screen_width - 200, margin - 20, 20, price_color);
+  DrawText(TextFormat("Riskless: %.2f", env->riskless), screen_width - 200, margin, 20, riskless_color);
+  DrawText(TextFormat("Risky: %.2f", env->risky), screen_width - 200, margin + 20, 20, risky_color);
 
   EndDrawing();
 }

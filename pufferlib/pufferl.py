@@ -52,7 +52,7 @@ class PuffeRL:
     def __init__(self, config, vecenv, policy, logger=None):
         # Backend perf optimization
         torch.set_float32_matmul_precision('high')
-        torch.backends.cudnn.deterministic = config['torch_deterministic']
+        torch.backends.cudnn.deterministic = bool(config['torch_deterministic'])
         torch.backends.cudnn.benchmark = True
 
         # Reproducibility
