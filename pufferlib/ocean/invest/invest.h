@@ -17,8 +17,12 @@ typedef struct {
   float episode_length;
   float terminal_risky;
   float terminal_riskless;
+  float terminal_price;
   float pre_terminal_risky;
   float pre_terminal_riskless;
+  float liquidation_steps;
+  float liquidation_cost;
+  float liquidation_action;
   float n;
 } Log;
 
@@ -61,6 +65,7 @@ void add_log(Invest *env) {
   env->log.score += env->rewards[0] > 0 ? 1 : 0;
   env->log.terminal_risky += env->risky;
   env->log.terminal_riskless += env->riskless;
+  env->log.terminal_price += env->prices[env->tick];
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
   env->log.n++;
@@ -155,42 +160,53 @@ void execute_action(Invest *env, float action) {
   float price = 10.0f * env->prices[env->tick];
   float prev_risky = env->risky;
   float prev_riskless = env->riskless;
-  float prev_comb = prev_riskless + prev_price * prev_risky;
+
   env->risky += action;
+  // to have no friction set friction_coef = 0
   env->riskless = env->riskless - action * price -
                   env->friction_coef * pow(fabsf(action), env->friction_power);
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
-  float comb = env->riskless + price * env->risky;
 
-  // MAKE SURE TO PUT IN TERMINAL REWARD IF ALL IS COMMENTED OUT
-  // env->rewards[0] = comb / 100; // comb normalized
-  env->rewards[0] = env->riskless - prev_riskless; // delta riskless
-  // env->rewards[0] = comb - prev_comb; // delta comb
-  // env->rewards[0] = env->riskless - prev_riskless +
-  //                   (price * env->risky) / 100; // delta riskless penalized
-  // env->rewards[0] = (env->riskless + price * env->risky) / 100;
-  // env->rewards[0] = env->risky - prev_risky;
+  // env->rewards[0] = price > 0 ? -action : action;
+  env->rewards[0] = env->riskless - prev_riskless; // this worked for sin
+
+  // terminal riskless or 0
+  // env->reward[0] = env->tick == env->T ? env->riskless : 0;
+
   env->tick += 1;
 }
 
 void liquidate(Invest *env) {
+  float initial_riskless = env->riskless;
+  float initial_risky = env->risky;
   float liquidation_step = -env->risky / (env->T + 1);
+  int liquidation_steps = 0;
+
+  env->log.liquidation_action = liquidation_step;
+
   switch (env->liq_type) {
   case 0:
     // liquidate entire position in a single step
     execute_action(env, -env->risky);
+    liquidation_steps = 1;
     break;
   case 1:
+    // liquidate position in env->T steps
     while (env->tick <= 2 * env->T) {
       execute_action(env, liquidation_step);
+      liquidation_steps++;
     }
     break;
   default:
     execute_action(env, -env->risky);
+    liquidation_steps = 1;
     break;
   }
+
+  env->log.liquidation_steps = liquidation_steps;
+  env->log.liquidation_cost = initial_riskless - env->riskless;
 }
 
 void c_step(Invest *env) {
@@ -204,8 +220,12 @@ void c_step(Invest *env) {
   execute_action(env, action);
 
   if (env->tick >= env->T) {
-    if (env->liquidate)
+    add_pre_terminal_log(env);
+    if (env->liquidate) {
+      float pre_liq_reward = env->rewards[0];
       liquidate(env);
+      env->rewards[0] = pre_liq_reward;
+    }
     // env->rewards[0] = env->riskless;
     env->terminals[0] = 1;
     add_log(env);
@@ -274,6 +294,7 @@ void c_render(Invest *env) {
   float max_price = 0;
   float max_assets = 0;
   float min_value = 0;
+<<<<<<< HEAD
   float min_price = prices_to_render[0];
   float max_price_val = prices_to_render[0];
 
@@ -288,6 +309,20 @@ void c_render(Invest *env) {
         fmaxf(max_assets, fmaxf(riskless_to_render[i], risky_to_render[i]));
     min_value =
         fminf(min_value, fminf(riskless_to_render[i], risky_to_render[i]));
+=======
+  float min_price = env->prices[0];
+  float max_price_val = env->prices[0];
+  for (int i = 0; i <= env->tick; i++) {
+    max_price = fmaxf(max_price, env->prices[i]);
+    max_assets = fmaxf(max_assets,
+                       fmaxf(env->riskless_history[i], env->risky_history[i]));
+    min_value = fminf(min_value,
+                      fminf(env->riskless_history[i], env->risky_history[i]));
+    if (env->prices[i] < min_price)
+      min_price = env->prices[i];
+    if (env->prices[i] > max_price_val)
+      max_price_val = env->prices[i];
+>>>>>>> 8328b2d7 (wip)
   }
 
   float max_value = fmaxf(max_price, max_assets);
@@ -303,6 +338,7 @@ void c_render(Invest *env) {
   // Scale x-axis based on episode length (including liquidation)
   float total_time_scale = (float)episode_length;
 
+<<<<<<< HEAD
   // Draw price line (YELLOW)
   for (int i = 1; i < episode_length; i++) {
     float x1 = margin + (i - 1) * graph_width / total_time_scale;
@@ -312,6 +348,12 @@ void c_render(Invest *env) {
                   (max_price_val - min_price + 1e-8f);
     float norm2 =
         (prices_to_render[i] - min_price) / (max_price_val - min_price + 1e-8f);
+=======
+  float norm1 =
+      (env->prices[i - 1] - min_price) / (max_price_val - min_price + 1e-8f);
+  float norm2 =
+      (env->prices[i] - min_price) / (max_price_val - min_price + 1e-8f);
+>>>>>>> 8328b2d7 (wip)
 
     // Map to 25% - 75% of the graph height
     float y1 = screen_height - margin - (0.25f + 0.5f * norm1) * graph_height;
@@ -321,6 +363,7 @@ void c_render(Invest *env) {
   }
 
   // Draw riskless asset line (SKYBLUE)
+<<<<<<< HEAD
   for (int i = 1; i < episode_length; i++) {
     float x1 = margin + (i - 1) * graph_width / total_time_scale;
     float y1 =
@@ -330,10 +373,22 @@ void c_render(Invest *env) {
     float y2 =
         screen_height - margin -
         ((riskless_to_render[i] - min_value) / value_range) * graph_height;
+=======
+for (int i = 1; i < env->tick; i++) {
+  float x1 = margin + (i - 1) * graph_width / (float)env->T;
+  float y1 =
+      screen_height - margin -
+      ((env->riskless_history[i - 1] - min_value) / value_range) * graph_height;
+  float x2 = margin + i * graph_width / (float)env->T;
+  float y2 =
+      screen_height - margin -
+      ((env->riskless_history[i] - min_value) / value_range) * graph_height;
+>>>>>>> 8328b2d7 (wip)
     DrawLine(x1, y1, x2, y2, riskless_color);
   }
 
   // Draw risky asset line (LIME)
+<<<<<<< HEAD
   for (int i = 1; i < episode_length; i++) {
     float x1 = margin + (i - 1) * graph_width / total_time_scale;
     float y1 =
@@ -342,6 +397,16 @@ void c_render(Invest *env) {
     float x2 = margin + i * graph_width / total_time_scale;
     float y2 = screen_height - margin -
                ((risky_to_render[i] - min_value) / value_range) * graph_height;
+=======
+for (int i = 1; i < env->tick; i++) {
+  float x1 = margin + (i - 1) * graph_width / (float)env->T;
+  float y1 =
+      screen_height - margin -
+      ((env->risky_history[i - 1] - min_value) / value_range) * graph_height;
+  float x2 = margin + i * graph_width / (float)env->T;
+  float y2 = screen_height - margin -
+             ((env->risky_history[i] - min_value) / value_range) * graph_height;
+>>>>>>> 8328b2d7 (wip)
     DrawLine(x1, y1, x2, y2, risky_color);
   }
 
@@ -355,6 +420,7 @@ void c_render(Invest *env) {
   }
 
   // Draw current values
+<<<<<<< HEAD
   if (render_last_episode) {
     DrawText("EPISODE COMPLETE - Showing liquidation", 10, 10, 20, RED);
     DrawText(TextFormat("Frames remaining: %d", env->render_frames_remaining),
@@ -369,6 +435,14 @@ void c_render(Invest *env) {
     DrawText(TextFormat("Tick: %d / %d", env->tick, env->T), screen_width - 200,
              margin + 40, 20, RAYWHITE);
   }
+=======
+DrawText(TextFormat("Price: %.2f", env->prices[env->tick]), screen_width - 200,
+         margin - 20, 20, price_color);
+DrawText(TextFormat("Riskless: %.2f", env->riskless), screen_width - 200,
+         margin, 20, riskless_color);
+DrawText(TextFormat("Risky: %.2f", env->risky), screen_width - 200, margin + 20,
+         20, risky_color);
+>>>>>>> 8328b2d7 (wip)
 
   EndDrawing();
 }

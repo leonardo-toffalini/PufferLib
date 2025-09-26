@@ -20,7 +20,11 @@ static int my_log(PyObject *dict, Log *log) {
   assign_to_dict(dict, "episode_length", log->episode_length);
   assign_to_dict(dict, "terminal_risky", log->terminal_risky);
   assign_to_dict(dict, "terminal_riskless", log->terminal_riskless);
+  assign_to_dict(dict, "terminal_price", log->terminal_price);
   assign_to_dict(dict, "pre_terminal_risky", log->pre_terminal_risky);
   assign_to_dict(dict, "pre_terminal_riskless", log->pre_terminal_riskless);
+  assign_to_dict(dict, "liquidation_steps", log->liquidation_steps);
+  assign_to_dict(dict, "liquidation_cost", log->liquidation_cost);
+  assign_to_dict(dict, "liquidation_action", log->liquidation_action);
   return 0;
 }

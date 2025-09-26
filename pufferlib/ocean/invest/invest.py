@@ -14,7 +14,7 @@ def process_name_to_process_id(process_name: str):
 
 class Invest(pufferlib.PufferEnv):
     def __init__(self, num_envs=1, render_mode=None, log_interval=128, time_horizon=100,
-                 hurst=0.1, process_type="fbm", liquidate=1, friction_coef=0.01,
+                 hurst=0.1, process_type="fbm", liquidate=1, friction_coef=0.00,
                  friction_power=2, liq_type=0, price_window_size=32, buf=None, seed=0):
         self.single_observation_space = gymnasium.spaces.Box(low=-1, high=1,
             shape=(4 + price_window_size,), dtype=np.float32)
@@ -50,20 +50,17 @@ class Invest(pufferlib.PufferEnv):
 if __name__ == '__main__':
     N = 1
     env = Invest(num_envs=N)
-    env.reset()
+    obs, _ = env.reset()
     steps = 0
 
     CACHE = 1024
-    actions = np.random.randint(-5, 5, (CACHE, N))
+    actions = np.random.randint(-1, 1, (CACHE, N))
 
     import time
     start = time.time()
     while time.time() - start < 10:
-        # env.step(actions[steps % CACHE])
-        obs, rewards, terminals, truncations, info = env.step(actions[steps % CACHE])
-        print(f"price: {obs[0][1]:.4f}, riskless: {obs[0][2]:.4f}")
-        # print(rewards[0])
-        input()
+        env.step(actions[steps % CACHE])
+        # obs, rewards, terminals, truncations, info = env.step(actions[steps % CACHE])
         steps += 1
 
     sps = int(env.num_agents * steps / (time.time() - start))
