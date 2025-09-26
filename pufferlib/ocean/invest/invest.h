@@ -294,7 +294,6 @@ void c_render(Invest *env) {
   float max_price = 0;
   float max_assets = 0;
   float min_value = 0;
-<<<<<<< HEAD
   float min_price = prices_to_render[0];
   float max_price_val = prices_to_render[0];
 
@@ -309,20 +308,6 @@ void c_render(Invest *env) {
         fmaxf(max_assets, fmaxf(riskless_to_render[i], risky_to_render[i]));
     min_value =
         fminf(min_value, fminf(riskless_to_render[i], risky_to_render[i]));
-=======
-  float min_price = env->prices[0];
-  float max_price_val = env->prices[0];
-  for (int i = 0; i <= env->tick; i++) {
-    max_price = fmaxf(max_price, env->prices[i]);
-    max_assets = fmaxf(max_assets,
-                       fmaxf(env->riskless_history[i], env->risky_history[i]));
-    min_value = fminf(min_value,
-                      fminf(env->riskless_history[i], env->risky_history[i]));
-    if (env->prices[i] < min_price)
-      min_price = env->prices[i];
-    if (env->prices[i] > max_price_val)
-      max_price_val = env->prices[i];
->>>>>>> 8328b2d7 (wip)
   }
 
   float max_value = fmaxf(max_price, max_assets);
@@ -338,7 +323,6 @@ void c_render(Invest *env) {
   // Scale x-axis based on episode length (including liquidation)
   float total_time_scale = (float)episode_length;
 
-<<<<<<< HEAD
   // Draw price line (YELLOW)
   for (int i = 1; i < episode_length; i++) {
     float x1 = margin + (i - 1) * graph_width / total_time_scale;
@@ -348,12 +332,6 @@ void c_render(Invest *env) {
                   (max_price_val - min_price + 1e-8f);
     float norm2 =
         (prices_to_render[i] - min_price) / (max_price_val - min_price + 1e-8f);
-=======
-  float norm1 =
-      (env->prices[i - 1] - min_price) / (max_price_val - min_price + 1e-8f);
-  float norm2 =
-      (env->prices[i] - min_price) / (max_price_val - min_price + 1e-8f);
->>>>>>> 8328b2d7 (wip)
 
     // Map to 25% - 75% of the graph height
     float y1 = screen_height - margin - (0.25f + 0.5f * norm1) * graph_height;
@@ -363,7 +341,6 @@ void c_render(Invest *env) {
   }
 
   // Draw riskless asset line (SKYBLUE)
-<<<<<<< HEAD
   for (int i = 1; i < episode_length; i++) {
     float x1 = margin + (i - 1) * graph_width / total_time_scale;
     float y1 =
@@ -373,22 +350,10 @@ void c_render(Invest *env) {
     float y2 =
         screen_height - margin -
         ((riskless_to_render[i] - min_value) / value_range) * graph_height;
-=======
-for (int i = 1; i < env->tick; i++) {
-  float x1 = margin + (i - 1) * graph_width / (float)env->T;
-  float y1 =
-      screen_height - margin -
-      ((env->riskless_history[i - 1] - min_value) / value_range) * graph_height;
-  float x2 = margin + i * graph_width / (float)env->T;
-  float y2 =
-      screen_height - margin -
-      ((env->riskless_history[i] - min_value) / value_range) * graph_height;
->>>>>>> 8328b2d7 (wip)
     DrawLine(x1, y1, x2, y2, riskless_color);
   }
 
   // Draw risky asset line (LIME)
-<<<<<<< HEAD
   for (int i = 1; i < episode_length; i++) {
     float x1 = margin + (i - 1) * graph_width / total_time_scale;
     float y1 =
@@ -397,16 +362,6 @@ for (int i = 1; i < env->tick; i++) {
     float x2 = margin + i * graph_width / total_time_scale;
     float y2 = screen_height - margin -
                ((risky_to_render[i] - min_value) / value_range) * graph_height;
-=======
-for (int i = 1; i < env->tick; i++) {
-  float x1 = margin + (i - 1) * graph_width / (float)env->T;
-  float y1 =
-      screen_height - margin -
-      ((env->risky_history[i - 1] - min_value) / value_range) * graph_height;
-  float x2 = margin + i * graph_width / (float)env->T;
-  float y2 = screen_height - margin -
-             ((env->risky_history[i] - min_value) / value_range) * graph_height;
->>>>>>> 8328b2d7 (wip)
     DrawLine(x1, y1, x2, y2, risky_color);
   }
 
@@ -420,7 +375,6 @@ for (int i = 1; i < env->tick; i++) {
   }
 
   // Draw current values
-<<<<<<< HEAD
   if (render_last_episode) {
     DrawText("EPISODE COMPLETE - Showing liquidation", 10, 10, 20, RED);
     DrawText(TextFormat("Frames remaining: %d", env->render_frames_remaining),
@@ -435,14 +389,6 @@ for (int i = 1; i < env->tick; i++) {
     DrawText(TextFormat("Tick: %d / %d", env->tick, env->T), screen_width - 200,
              margin + 40, 20, RAYWHITE);
   }
-=======
-DrawText(TextFormat("Price: %.2f", env->prices[env->tick]), screen_width - 200,
-         margin - 20, 20, price_color);
-DrawText(TextFormat("Riskless: %.2f", env->riskless), screen_width - 200,
-         margin, 20, riskless_color);
-DrawText(TextFormat("Risky: %.2f", env->risky), screen_width - 200, margin + 20,
-         20, risky_color);
->>>>>>> 8328b2d7 (wip)
 
   EndDrawing();
 }

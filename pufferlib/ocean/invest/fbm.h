@@ -158,7 +158,7 @@ double *simulate_fBm(double H, int n, double T) {
   free(Y);
 
   // Scale for interval [0,T]
-  double scale = sqrt(T / n) * pow(T / n, H - 0.5);
+  double scale = 10 * sqrt(T / n) * pow(T / n, H - 0.5);
   for (int i = 0; i < n; i++) {
     fGn[i] *= scale;
   }
