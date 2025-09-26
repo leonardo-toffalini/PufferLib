@@ -58,6 +58,9 @@ typedef struct {
   float *last_riskless_history;
   float *last_risky_history;
   int render_frames_remaining;
+  int history_capacity;
+  int last_prices_capacity;
+  int last_history_capacity;
 } Invest;
 
 void add_log(Invest *env) {
@@ -65,7 +68,13 @@ void add_log(Invest *env) {
   env->log.score += env->rewards[0] > 0 ? 1 : 0;
   env->log.terminal_risky += env->risky;
   env->log.terminal_riskless += env->riskless;
-  env->log.terminal_price += env->prices[env->tick];
+  int max_idx = 2 * env->T;
+  int idx = env->tick;
+  if (idx > max_idx)
+    idx = max_idx;
+  if (idx < 0)
+    idx = 0;
+  env->log.terminal_price += env->prices[idx];
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
   env->log.n++;
@@ -120,6 +129,9 @@ void c_reset(Invest *env) {
     env->last_riskless_history = NULL;
     env->last_risky_history = NULL;
     env->render_frames_remaining = 0;
+    env->history_capacity = 0;
+    env->last_prices_capacity = 0;
+    env->last_history_capacity = 0;
     first_reset = 0;
   }
 
@@ -142,22 +154,25 @@ void c_reset(Invest *env) {
   else
     env->prices = simulate_fBm(env->H, 2 * env->T, 2 * env->T);
 
-  if (env->riskless_history == NULL)
-    env->riskless_history = (float *)malloc((2 * env->T + 1) * sizeof(float));
-  if (env->risky_history == NULL)
-    env->risky_history = (float *)malloc((2 * env->T + 1) * sizeof(float));
+  int needed_len = 2 * env->T + 1;
+  if (env->riskless_history == NULL || env->risky_history == NULL ||
+      env->history_capacity != needed_len) {
+    free(env->riskless_history);
+    free(env->risky_history);
+    env->riskless_history = (float *)malloc(needed_len * sizeof(float));
+    env->risky_history = (float *)malloc(needed_len * sizeof(float));
+    env->history_capacity = needed_len;
+  }
 
-  // Correct memset to initialize the full array
-  memset(env->riskless_history, 0, (2 * env->T + 1) * sizeof(float));
-  memset(env->risky_history, 0, (2 * env->T + 1) * sizeof(float));
+  // Initialize the full arrays
+  memset(env->riskless_history, 0, needed_len * sizeof(float));
+  memset(env->risky_history, 0, needed_len * sizeof(float));
 
   compute_observations(env);
 }
 
 void execute_action(Invest *env, float action) {
-  float prev_price =
-      env->tick > 0 ? env->prices[env->tick - 1] : env->prices[0];
-  float price = 10.0f * env->prices[env->tick];
+  float price = env->prices[env->tick];
   float prev_risky = env->risky;
   float prev_riskless = env->riskless;
 
@@ -228,11 +243,41 @@ void c_step(Invest *env) {
     }
     // env->rewards[0] = env->riskless;
     env->terminals[0] = 1;
+    // Snapshot last episode for rendering before reset
+    int episode_len = env->tick; // includes liquidation if any
+    if (episode_len > 0) {
+      if (env->last_prices == NULL || env->last_prices_capacity < episode_len) {
+        free(env->last_prices);
+        env->last_prices =
+            (double *)malloc(episode_len * sizeof(double));
+        env->last_prices_capacity = episode_len;
+      }
+      if (env->last_riskless_history == NULL ||
+          env->last_risky_history == NULL ||
+          env->last_history_capacity < episode_len) {
+        free(env->last_riskless_history);
+        free(env->last_risky_history);
+        env->last_riskless_history =
+            (float *)malloc(episode_len * sizeof(float));
+        env->last_risky_history =
+            (float *)malloc(episode_len * sizeof(float));
+        env->last_history_capacity = episode_len;
+      }
+      memcpy(env->last_prices, env->prices, episode_len * sizeof(double));
+      memcpy(env->last_riskless_history, env->riskless_history,
+             episode_len * sizeof(float));
+      memcpy(env->last_risky_history, env->risky_history,
+             episode_len * sizeof(float));
+      env->last_episode_length = episode_len;
+      env->render_frames_remaining = 60; // ~4 seconds at 15 fps
+    }
     add_log(env);
     c_reset(env);
   }
 
-  compute_observations(env);
+  // Avoid recomputing observations immediately after a terminal reset
+  if (!env->terminals[0])
+    compute_observations(env);
 }
 
 // Required function. Should handle creating the client on first call
@@ -272,10 +317,6 @@ void c_render(Invest *env) {
 
   if (render_last_episode) {
     env->render_frames_remaining--;
-  }
-
-  if (env->terminals[0] == 1) {
-    printf("reward (terminal riskless): %f\n", MAX_RISKLESS * env->rewards[0]);
   }
 
   // Draw axes
