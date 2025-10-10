@@ -153,6 +153,9 @@ wandb/
 raylib*/
 box2d*/
 
+# CLion
+.idea
+
 # Temp Impulse Wars files
 pufferlib/ocean/impulse_wars/*-debug/
 pufferlib/ocean/impulse_wars/*-release/

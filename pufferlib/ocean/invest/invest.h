@@ -184,8 +184,11 @@ void execute_action(Invest *env, float action) {
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
 
-  // env->rewards[0] = price > 0 ? -action : action;
-  env->rewards[0] = env->riskless - prev_riskless; // this worked for sin
+  // Contrarian reward
+  env->rewards[0] = price > 0 ? -action : action;
+
+  // Delta riskless
+  // env->rewards[0] = env->riskless - prev_riskless; // this worked for sin
 
   // terminal riskless or 0
   // env->reward[0] = env->tick == env->T ? env->riskless : 0;
