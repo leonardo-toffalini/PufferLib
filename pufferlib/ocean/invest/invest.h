@@ -315,6 +315,8 @@ void c_render(Invest *env) {
       render_last_episode ? env->last_episode_length : env->tick;
   int T_to_use = env->T;
 
+  if (env->render_frames_remaining == 1) c_reset(env);
+  
   if (render_last_episode) {
     env->render_frames_remaining--;
   }
@@ -363,7 +365,40 @@ void c_render(Invest *env) {
 
   // Scale x-axis based on episode length (including liquidation)
   float total_time_scale = (float)episode_length;
-
+  
+  // Draw axis ticks and labels
+  {
+    int x_ticks = 8;
+    int y_ticks = 6;
+    
+    // X-axis ticks (time)
+    for (int i = 0; i <= x_ticks; i++) {
+      float t = (float)i / x_ticks;
+      float x = margin + t * graph_width;
+      DrawLine((int)x, screen_height - margin - 5, (int)x, screen_height - margin + 5, axis_color);
+      int time_label = (int)roundf(t * total_time_scale);
+      DrawText(TextFormat("%d", time_label), (int)(x - 10), screen_height - margin + 8, 12, axis_color);
+    }
+    DrawText("Time", screen_width / 2 - 20, screen_height - margin + 24, 14, axis_color);
+    
+    // Y-axis ticks (value)
+    for (int i = 0; i <= y_ticks; i++) {
+      float t = (float)i / y_ticks;
+      float y = screen_height - margin - t * graph_height;
+      DrawLine(margin - 5, (int)y, margin + 5, (int)y, axis_color);
+      float v = min_value + t * value_range;
+      DrawText(TextFormat("%.0f", v), margin - 44, (int)(y - 8), 12, axis_color);
+    }
+    DrawText("Value", margin - 40, margin - 26, 14, axis_color);
+  }
+  
+  // Draw a faint horizontal line at y = 0 if within range
+  if (0.0f >= min_value && 0.0f <= (min_value + value_range)) {
+    float y_zero = screen_height - margin - ((0.0f - min_value) / value_range) * graph_height;
+    Color zero_color = ColorAlpha(RED, 0.2f);
+    DrawLine(margin, (int)y_zero, screen_width - margin, (int)y_zero, zero_color);
+  }
+  
   // Draw price line (YELLOW)
   for (int i = 1; i < episode_length; i++) {
     float x1 = margin + (i - 1) * graph_width / total_time_scale;
