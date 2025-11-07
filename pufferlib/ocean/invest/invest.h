@@ -61,6 +61,15 @@ typedef struct {
   int history_capacity;
   int last_prices_capacity;
   int last_history_capacity;
+
+  // Optional pre-generated fBm dataset (see generate_fbm.py)
+  // If process_type == 2 and fbm_file_path != NULL, we will load the dataset
+  // once and randomly pick a path each reset.
+  const char *fbm_file_path; // optional path to binary file
+  double *fbm_dataset; // shape: fbm_num_paths * fbm_num_points (row-major)
+  uint32_t fbm_num_paths;
+  uint32_t fbm_num_points; // must equal 2*T + 1 to use without fallback
+  uint16_t fbm_dtype_code; // 1=float64, 2=float32
 } Invest;
 
 void add_log(Invest *env) {
@@ -110,6 +119,134 @@ void compute_observations(Invest *env) {
   }
 }
 
+// Load pre-generated fBm dataset into env->fbm_dataset if not already loaded.
+// Returns 1 on success, 0 on failure.
+static int load_fbm_dataset(Invest *env) {
+  if (env->fbm_file_path == NULL || env->fbm_file_path[0] == '\0')
+    return 0;
+  if (env->fbm_dataset != NULL)
+    return 1; // already loaded
+
+  FILE *f = fopen(env->fbm_file_path, "rb");
+  if (!f)
+    return 0;
+
+  // Header: <I H H I I d d 32s>
+  uint32_t magic = 0;
+  uint16_t version = 0, dtype = 0;
+  uint32_t n_paths = 0, n_points = 0;
+  double H_file = 0.0, T_file = 0.0;
+  unsigned char reserved[32];
+
+  if (fread(&magic, sizeof(uint32_t), 1, f) != 1) {
+    fclose(f);
+    return 0;
+  }
+  if (fread(&version, sizeof(uint16_t), 1, f) != 1) {
+    fclose(f);
+    return 0;
+  }
+  if (fread(&dtype, sizeof(uint16_t), 1, f) != 1) {
+    fclose(f);
+    return 0;
+  }
+  if (fread(&n_paths, sizeof(uint32_t), 1, f) != 1) {
+    fclose(f);
+    return 0;
+  }
+  if (fread(&n_points, sizeof(uint32_t), 1, f) != 1) {
+    fclose(f);
+    return 0;
+  }
+  if (fread(&H_file, sizeof(double), 1, f) != 1) {
+    fclose(f);
+    return 0;
+  }
+  if (fread(&T_file, sizeof(double), 1, f) != 1) {
+    fclose(f);
+    return 0;
+  }
+  if (fread(reserved, sizeof(unsigned char), 32, f) != 32) {
+    fclose(f);
+    return 0;
+  }
+
+  if (magic != 0x314D4246u || version != 1u) {
+    fclose(f);
+    return 0;
+  }
+  if (!(dtype == 1u || dtype == 2u)) {
+    fclose(f);
+    return 0;
+  }
+  if (n_paths == 0 || n_points == 0) {
+    fclose(f);
+    return 0;
+  }
+
+  size_t total = (size_t)n_paths * (size_t)n_points;
+  double *dataset = (double *)malloc(total * sizeof(double));
+  if (!dataset) {
+    fclose(f);
+    return 0;
+  }
+
+  if (dtype == 1u) {
+    // float64 stored
+    if (fread(dataset, sizeof(double), total, f) != total) {
+      free(dataset);
+      fclose(f);
+      return 0;
+    }
+  } else {
+    // float32 stored, convert to double
+    float *tmp = (float *)malloc(total * sizeof(float));
+    if (!tmp) {
+      free(dataset);
+      fclose(f);
+      return 0;
+    }
+    if (fread(tmp, sizeof(float), total, f) != total) {
+      free(tmp);
+      free(dataset);
+      fclose(f);
+      return 0;
+    }
+    for (size_t i = 0; i < total; i++)
+      dataset[i] = (double)tmp[i];
+    free(tmp);
+  }
+
+  fclose(f);
+  env->fbm_dataset = dataset;
+  env->fbm_num_paths = n_paths;
+  env->fbm_num_points = n_points;
+  env->fbm_dtype_code = dtype;
+  (void)H_file;
+  (void)T_file; // not used directly here
+  return 1;
+}
+
+// Copy a random path from env->fbm_dataset into env->prices
+static int assign_random_fbm_path(Invest *env) {
+  if (!load_fbm_dataset(env))
+    return 0;
+  int needed_len = 2 * env->T + 1;
+  if ((int)env->fbm_num_points < needed_len)
+    return 0;
+
+  int path_idx = rand() % (int)env->fbm_num_paths;
+  const double *src =
+      env->fbm_dataset + ((size_t)path_idx * (size_t)env->fbm_num_points);
+
+  env->prices = (double *)malloc(needed_len * sizeof(double));
+  if (!env->prices)
+    return 0;
+  // If dataset has more points than needed, take the first needed_len
+  memcpy(env->prices, src, (size_t)needed_len * sizeof(double));
+  return 1;
+}
+
 // Required function
 void c_reset(Invest *env) {
   env->tick = 0;
@@ -149,10 +286,18 @@ void c_reset(Invest *env) {
   }
 
   // simulate_fBm(env->H, env->T, env->T);
-  if (env->process_type == 0)
+  if (env->process_type == 0) {
     env->prices = sin_process(env);
-  else
+  } else if (env->process_type == 1) {
     env->prices = simulate_fBm(env->H, 2 * env->T, 2 * env->T);
+  } else if (env->process_type == 2) {
+    // Try to use pre-generated dataset; if it fails, fall back to on-the-fly
+    if (!assign_random_fbm_path(env)) {
+      env->prices = simulate_fBm(env->H, 2 * env->T, 2 * env->T);
+    }
+  } else {
+    env->prices = simulate_fBm(env->H, 2 * env->T, 2 * env->T);
+  }
 
   int needed_len = 2 * env->T + 1;
   if (env->riskless_history == NULL || env->risky_history == NULL ||
@@ -248,8 +393,7 @@ void c_step(Invest *env) {
     if (episode_len > 0) {
       if (env->last_prices == NULL || env->last_prices_capacity < episode_len) {
         free(env->last_prices);
-        env->last_prices =
-            (double *)malloc(episode_len * sizeof(double));
+        env->last_prices = (double *)malloc(episode_len * sizeof(double));
         env->last_prices_capacity = episode_len;
       }
       if (env->last_riskless_history == NULL ||
@@ -259,8 +403,7 @@ void c_step(Invest *env) {
         free(env->last_risky_history);
         env->last_riskless_history =
             (float *)malloc(episode_len * sizeof(float));
-        env->last_risky_history =
-            (float *)malloc(episode_len * sizeof(float));
+        env->last_risky_history = (float *)malloc(episode_len * sizeof(float));
         env->last_history_capacity = episode_len;
       }
       memcpy(env->last_prices, env->prices, episode_len * sizeof(double));
@@ -443,6 +586,7 @@ void c_close(Invest *env) {
   free(env->last_prices);
   free(env->last_riskless_history);
   free(env->last_risky_history);
+  free(env->fbm_dataset);
   if (IsWindowReady()) {
     CloseWindow();
   }
