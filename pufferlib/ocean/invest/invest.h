@@ -94,6 +94,12 @@ double *sin_process(Invest *env) {
   return process;
 }
 
+float pen_func(Invest *env) {
+  return 0.0f;
+  // float price = env->prices[env->tick];
+  // return env->riskless * price;
+}
+
 void compute_observations(Invest *env) {
   int obs_idx = 0;
   env->observations[obs_idx++] = (float)env->tick / env->T;
@@ -185,13 +191,17 @@ void execute_action(Invest *env, float action) {
   env->risky_history[env->tick] = env->risky;
 
   // Contrarian reward
-  env->rewards[0] = price > 0 ? -action : action;
+  // env->rewards[0] = price > 0 ? -action : action;
+
+  env->rewards[0] = 0.0f;
 
   // Delta riskless
   // env->rewards[0] = env->riskless - prev_riskless; // this worked for sin
 
   // terminal riskless or 0
   // env->reward[0] = env->tick == env->T ? env->riskless : 0;
+
+  env->rewards[0] += pen_func(env);
 
   env->tick += 1;
 }
@@ -274,6 +284,7 @@ void c_step(Invest *env) {
       env->last_episode_length = episode_len;
       env->render_frames_remaining = 60; // ~4 seconds at 15 fps
     }
+    env->rewards[0] = env->riskless;
     add_log(env);
     c_reset(env);
   }
