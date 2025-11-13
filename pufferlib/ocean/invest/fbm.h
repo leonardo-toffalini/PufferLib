@@ -63,9 +63,10 @@ void fft(double complex *x, int N, bool inverse) {
   }
 
   // Scaling for inverse FFT
+  double s = 1.0 / sqrt((double)N);
   if (inverse) {
     for (int i = 0; i < N; i++) {
-      x[i] /= N;
+      x[i] *= s;
     }
   }
 }

@@ -94,10 +94,42 @@ double *sin_process(Invest *env) {
   return process;
 }
 
+
+float n_step_liq_value(Invest *env, int n) {
+  float starting_price = env->prices[env->tick];
+  float starting_risky = env->risky;
+  float risky = starting_risky;
+  float riskless = env->riskless;
+
+  double *prices = simulate_fBm(env->H, n, n);
+
+  for (int tick = 0; tick < n; tick++) {
+    float price = starting_price + prices[tick];
+    float action = starting_risky / n;
+    risky += action;
+    riskless = riskless - action * price -
+                    env->friction_coef * pow(fabsf(action), env->friction_power);
+  }
+  
+  return riskless;
+}
+
+// returns how much riskless would be left after a single step liquidation on the current price
+float single_step_liq_value(Invest *env) {
+  float price = env->prices[env->tick];
+  float action = env->risky;
+  float riskless_after_liq = env->riskless - action * price -
+                  env->friction_coef * pow(fabsf(action), env->friction_power);
+
+  return riskless_after_liq;
+}
+
+// exponentially or linearly weighted
 float pen_func(Invest *env) {
-  return 0.0f;
-  // float price = env->prices[env->tick];
-  // return env->riskless * price;
+  float pen = n_step_liq_value(env, 10);
+  float weight = (float)env->tick / (float)env->T;
+
+  return pen * weight;
 }
 
 void compute_observations(Invest *env) {
