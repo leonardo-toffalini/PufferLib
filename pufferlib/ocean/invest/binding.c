@@ -11,6 +11,7 @@ static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
   env->friction_coef = unpack(kwargs, "friction_coef");
   env->friction_power = unpack(kwargs, "friction_power");
   env->price_window_size = unpack(kwargs, "price_window_size");
+  env->prediction_len = unpack(kwargs, "prediction_len");
   return 0;
 }
 

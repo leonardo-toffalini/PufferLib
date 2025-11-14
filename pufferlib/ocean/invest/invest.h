@@ -43,6 +43,7 @@ typedef struct {
   float friction_coef;
   int friction_power;
   int price_window_size;
+  int prediction_len;
 
   float riskless;
   float risky;
@@ -95,11 +96,12 @@ double *sin_process(Invest *env) {
 }
 
 
-float n_step_liq_value(Invest *env, int n) {
+float n_step_liq_value(Invest *env) {
   float starting_price = env->prices[env->tick];
   float starting_risky = env->risky;
   float risky = starting_risky;
   float riskless = env->riskless;
+  int n = env->prediction_len;
 
   double *prices = simulate_fBm(env->H, n, n);
 
@@ -126,7 +128,7 @@ float single_step_liq_value(Invest *env) {
 
 // exponentially or linearly weighted
 float pen_func(Invest *env) {
-  float pen = n_step_liq_value(env, 10);
+  float pen = n_step_liq_value(env);
   float weight = (float)env->tick / (float)env->T;
 
   return pen * weight;
