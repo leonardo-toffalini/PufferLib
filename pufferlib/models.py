@@ -51,6 +51,14 @@ class Default(nn.Module):
             self.decoder = pufferlib.pytorch.layer_init(
                 nn.Linear(hidden_size, env.single_action_space.n), std=0.01)
         else:
+            action_low = np.asarray(env.single_action_space.low, dtype=np.float32)
+            action_high = np.asarray(env.single_action_space.high, dtype=np.float32)
+            action_scale = 0.5 * (action_high - action_low)
+            action_bias = 0.5 * (action_high + action_low)
+            self.register_buffer("action_low", torch.as_tensor(action_low))
+            self.register_buffer("action_high", torch.as_tensor(action_high))
+            self.register_buffer("action_scale", torch.as_tensor(action_scale))
+            self.register_buffer("action_bias", torch.as_tensor(action_bias))
             self.decoder_mean = pufferlib.pytorch.layer_init(
                 nn.Linear(hidden_size, env.single_action_space.shape[0]), std=0.01)
             self.decoder_logstd = nn.Parameter(torch.zeros(
@@ -85,9 +93,18 @@ class Default(nn.Module):
             logits = self.decoder(hidden).split(self.action_nvec, dim=1)
         elif self.is_continuous:
             mean = self.decoder_mean(hidden)
+            mean = torch.nan_to_num(mean, nan=0.0, posinf=20.0, neginf=-20.0)
+            mean = torch.clamp(mean, -20.0, 20.0)
             logstd = self.decoder_logstd.expand_as(mean)
+            # Keep std in a numerically stable band for PPO updates.
+            logstd = torch.clamp(logstd, -5.0, 2.0)
             std = torch.exp(logstd)
             logits = torch.distributions.Normal(mean, std)
+            logits._tanh_squash = True
+            logits._action_low = self.action_low
+            logits._action_high = self.action_high
+            logits._action_scale = self.action_scale
+            logits._action_bias = self.action_bias
         else:
             logits = self.decoder(hidden)
 

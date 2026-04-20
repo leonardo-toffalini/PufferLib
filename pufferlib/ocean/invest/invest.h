@@ -15,6 +15,8 @@ typedef struct {
   float score;
   float episode_return;
   float episode_length;
+  float step_pnl;
+  float position_abs;
   float terminal_risky;
   float terminal_riskless;
   float terminal_price;
@@ -29,13 +31,15 @@ typedef struct {
 typedef struct {
   Log log;
   float *observations;
-  int *actions;
+  float *actions;
   float *rewards;
   unsigned char *terminals;
 
   // env specific
   // can be defined
   int T;
+  int T_min;
+  int T_max;
   float H;
   int process_type;
   int liquidate;
@@ -44,12 +48,19 @@ typedef struct {
   int friction_power;
   int price_window_size;
   int prediction_len;
+  float reward_scale;
 
   float riskless;
   float risky;
   double *prices;
+  int prices_capacity;
+  double *liq_prices_buffer;
+  int liq_prices_capacity;
   float *riskless_history;
   float *risky_history;
+  float episode_step_pnl_sum;
+  float episode_position_abs_sum;
+  int episode_position_steps;
 
   int tick;
 
@@ -78,6 +89,12 @@ void add_log(Invest *env) {
   env->log.terminal_price += env->prices[idx];
   env->log.episode_length += env->tick;
   env->log.episode_return += env->rewards[0];
+  if (env->episode_position_steps > 0) {
+    env->log.step_pnl +=
+        env->episode_step_pnl_sum / (float)env->episode_position_steps;
+    env->log.position_abs +=
+        env->episode_position_abs_sum / (float)env->episode_position_steps;
+  }
   env->log.n++;
 }
 
@@ -95,24 +112,46 @@ double *sin_process(Invest *env) {
   return process;
 }
 
+void sin_process_into(Invest *env, double *process) {
+  for (int i = 0; i < 2 * env->T + 1; i++) {
+    process[i] = sin(2 * PI * i / env->T);
+  }
+}
+
 
 float n_step_liq_value(Invest *env) {
   float starting_price = env->prices[env->tick];
-  float starting_risky = env->risky;
-  float risky = starting_risky;
+  float risky = env->risky;
   float riskless = env->riskless;
   int n = env->prediction_len;
+  if (n <= 0) {
+    return 0.0f;
+  }
 
-  double *prices = simulate_fBm(env->H, n, n);
+  int needed = (n < 2 ? 2 : n) + 1;
+  if (env->liq_prices_buffer == NULL || env->liq_prices_capacity < needed) {
+    double *new_buf =
+        (double *)realloc(env->liq_prices_buffer, needed * sizeof(double));
+    if (new_buf == NULL) {
+      return riskless;
+    }
+    env->liq_prices_buffer = new_buf;
+    env->liq_prices_capacity = needed;
+  }
+
+  if (simulate_fBm_into(env->liq_prices_buffer, env->H, n, n) != 0) {
+    return riskless;
+  }
 
   for (int tick = 0; tick < n; tick++) {
-    float price = starting_price + prices[tick];
-    float action = starting_risky / n;
+    float price = starting_price + env->liq_prices_buffer[tick];
+    // Simulate progressive liquidation over the remaining forecast horizon.
+    float action = -risky / (float)(n - tick);
     risky += action;
     riskless = riskless - action * price -
                     env->friction_coef * pow(fabsf(action), env->friction_power);
   }
-  
+
   return riskless;
 }
 
@@ -130,13 +169,19 @@ float single_step_liq_value(Invest *env) {
 float pen_func(Invest *env) {
   float pen = n_step_liq_value(env);
   float weight = (float)env->tick / (float)env->T;
-
-  return pen * weight;
+  float shaped = pen * weight;
+  if (!isfinite(shaped)) {
+    return 0.0f;
+  }
+  return shaped;
 }
 
 void compute_observations(Invest *env) {
   int obs_idx = 0;
   env->observations[obs_idx++] = (float)env->tick / env->T;
+  float horizon_norm = 0.0f;
+  horizon_norm = (float)(env->T - env->T_min) / (float)(env->T_max - env->T_min);
+  env->observations[obs_idx++] = horizon_norm;
   env->observations[obs_idx++] = env->prices[env->tick] / MAX_PRICE;
   env->observations[obs_idx++] = env->riskless / MAX_RISKLESS;
   env->observations[obs_idx++] = env->risky / MAX_RISKY;
@@ -155,6 +200,9 @@ void c_reset(Invest *env) {
   env->tick = 0;
   env->riskless = 0;
   env->risky = 0;
+  env->episode_step_pnl_sum = 0.0f;
+  env->episode_position_abs_sum = 0.0f;
+  env->episode_position_steps = 0;
 
   // Set default price_window_size if not already set
   if (env->price_window_size <= 0) {
@@ -168,6 +216,10 @@ void c_reset(Invest *env) {
     env->last_prices = NULL;
     env->last_riskless_history = NULL;
     env->last_risky_history = NULL;
+    env->prices = NULL;
+    env->prices_capacity = 0;
+    env->liq_prices_buffer = NULL;
+    env->liq_prices_capacity = 0;
     env->render_frames_remaining = 0;
     env->history_capacity = 0;
     env->last_prices_capacity = 0;
@@ -182,19 +234,45 @@ void c_reset(Invest *env) {
     rng_seeded = 1;
   }
 
-  // Free old prices array to avoid memory leak
-  if (env->prices != NULL) {
-    free(env->prices);
-    env->prices = NULL;
+  // Sample episode horizon T uniformly from [T_min, T_max] if provided
+  if (env->T_min > 0 && env->T_max >= env->T_min) {
+    int range = env->T_max - env->T_min + 1;
+    if (range > 0) {
+      env->T = env->T_min + (rand() % range);
+    } else {
+      env->T = env->T_min;
+    }
   }
 
-  // simulate_fBm(env->H, env->T, env->T);
-  if (env->process_type == 0)
-    env->prices = sin_process(env);
-  else
-    env->prices = simulate_fBm(env->H, 2 * env->T, 2 * env->T);
-
   int needed_len = 2 * env->T + 1;
+  if (env->prices == NULL || env->prices_capacity < needed_len) {
+    double *new_prices = (double *)realloc(env->prices, needed_len * sizeof(double));
+    if (new_prices == NULL) {
+      // Keep env valid; fall back to zeros for this episode.
+      env->prices = NULL;
+      env->prices_capacity = 0;
+    } else {
+      env->prices = new_prices;
+      env->prices_capacity = needed_len;
+    }
+  }
+
+  if (env->prices == NULL) {
+    // Allocation failed: deterministic safe fallback.
+    env->prices = (double *)calloc(needed_len, sizeof(double));
+    if (env->prices != NULL) {
+      env->prices_capacity = needed_len;
+    }
+  }
+
+  if (env->prices != NULL) {
+    if (env->process_type == 0) {
+      sin_process_into(env, env->prices);
+    } else if (simulate_fBm_into(env->prices, env->H, 2 * env->T, 2 * env->T) != 0) {
+      memset(env->prices, 0, needed_len * sizeof(double));
+    }
+  }
+
   if (env->riskless_history == NULL || env->risky_history == NULL ||
       env->history_capacity != needed_len) {
     free(env->riskless_history);
@@ -213,13 +291,19 @@ void c_reset(Invest *env) {
 
 void execute_action(Invest *env, float action) {
   float price = env->prices[env->tick];
-  float prev_risky = env->risky;
-  float prev_riskless = env->riskless;
+  float prev_wealth = env->riskless + env->risky * price;
 
   env->risky += action;
   // to have no friction set friction_coef = 0
   env->riskless = env->riskless - action * price -
                   env->friction_coef * pow(fabsf(action), env->friction_power);
+
+  if (!isfinite(env->risky)) {
+    env->risky = 0.0f;
+  }
+  if (!isfinite(env->riskless)) {
+    env->riskless = 0.0f;
+  }
 
   env->riskless_history[env->tick] = env->riskless;
   env->risky_history[env->tick] = env->risky;
@@ -227,7 +311,20 @@ void execute_action(Invest *env, float action) {
   // Contrarian reward
   // env->rewards[0] = price > 0 ? -action : action;
 
-  env->rewards[0] = 0.0f;
+  // Dense reward: one-step mark-to-market wealth delta.
+  // This keeps credit assignment local even for long horizons.
+  float next_price = price;
+  if (env->tick + 1 <= 2 * env->T) {
+    next_price = env->prices[env->tick + 1];
+  }
+  float next_wealth = env->riskless + env->risky * next_price;
+  float step_pnl = next_wealth - prev_wealth;
+  env->rewards[0] = step_pnl;
+  if (env->tick < env->T) {
+    env->episode_step_pnl_sum += step_pnl;
+    env->episode_position_abs_sum += fabsf(env->risky);
+    env->episode_position_steps += 1;
+  }
 
   // Delta riskless
   // env->rewards[0] = env->riskless - prev_riskless; // this worked for sin
@@ -235,7 +332,13 @@ void execute_action(Invest *env, float action) {
   // terminal riskless or 0
   // env->reward[0] = env->tick == env->T ? env->riskless : 0;
 
-  env->rewards[0] += pen_func(env);
+  if (env->prediction_len > 0) {
+    env->rewards[0] += pen_func(env);
+  }
+  env->rewards[0] *= env->reward_scale;
+  if (!isfinite(env->rewards[0])) {
+    env->rewards[0] = 0.0f;
+  }
 
   env->tick += 1;
 }
@@ -254,16 +357,13 @@ void liquidate(Invest *env) {
     execute_action(env, -env->risky);
     liquidation_steps = 1;
     break;
+  default:
   case 1:
     // liquidate position in env->T steps
     while (env->tick <= 2 * env->T) {
       execute_action(env, liquidation_step);
       liquidation_steps++;
     }
-    break;
-  default:
-    execute_action(env, -env->risky);
-    liquidation_steps = 1;
     break;
   }
 
@@ -275,9 +375,10 @@ void c_step(Invest *env) {
   env->terminals[0] = 0;
   env->rewards[0] = 0;
 
-  int action =
-      env->actions[0] - 10; // {0, 1, ..., 20} -> {-10, ..., 0, ..., 10}
-  // int action = env->actions[0] - 1; // {0, 1, 2} -> {-1, 0, 1}
+  float action = env->actions[0];
+  if (!isfinite(action)) {
+    action = 0.0f;
+  }
 
   execute_action(env, action);
 
@@ -318,7 +419,8 @@ void c_step(Invest *env) {
       env->last_episode_length = episode_len;
       env->render_frames_remaining = 60; // ~4 seconds at 15 fps
     }
-    env->rewards[0] = env->riskless;
+    env->rewards[0] =
+        isfinite(env->riskless) ? env->riskless * env->reward_scale : 0.0f;
     add_log(env);
     c_reset(env);
   }
@@ -521,6 +623,7 @@ void c_render(Invest *env) {
 // Do not free env->observations, actions, rewards, terminals
 void c_close(Invest *env) {
   free(env->prices);
+  free(env->liq_prices_buffer);
   free(env->riskless_history);
   free(env->risky_history);
   free(env->last_prices);

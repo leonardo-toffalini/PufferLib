@@ -321,6 +321,8 @@ class PuffeRL:
         a = config['prio_alpha']
         clip_coef = config['clip_coef']
         vf_clip = config['vf_clip_coef']
+        target_kl = config.get('target_kl', None)
+        max_logratio = config.get('max_logratio', 20.0)
         anneal_beta = b0 + (1 - b0)*a*self.epoch/self.total_epochs
         self.ratio[:] = 1
 
@@ -367,13 +369,21 @@ class PuffeRL:
             profile('train_misc', epoch)
             newlogprob = newlogprob.reshape(mb_logprobs.shape)
             logratio = newlogprob - mb_logprobs
+            logratio = torch.nan_to_num(logratio, nan=0.0, posinf=max_logratio, neginf=-max_logratio)
+            logratio = torch.clamp(logratio, -max_logratio, max_logratio)
             ratio = logratio.exp()
+            ratio = torch.nan_to_num(ratio, nan=1.0, posinf=1e6, neginf=0.0)
             self.ratio[idx] = ratio.detach()
 
             with torch.no_grad():
                 old_approx_kl = (-logratio).mean()
                 approx_kl = ((ratio - 1) - logratio).mean()
                 clipfrac = ((ratio - 1.0).abs() > config['clip_coef']).float().mean()
+
+            if target_kl is not None and approx_kl.item() > target_kl:
+                losses['target_kl'] = float(approx_kl.item())
+                losses['target_kl_hit'] = 1.0
+                break
 
             adv = advantages[idx]
             adv = compute_puff_advantage(mb_values, mb_rewards, mb_terminals,
@@ -388,9 +398,20 @@ class PuffeRL:
             pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
             newvalue = newvalue.view(mb_returns.shape)
-            v_clipped = mb_values + torch.clamp(newvalue - mb_values, -vf_clip, vf_clip)
-            v_loss_unclipped = (newvalue - mb_returns) ** 2
-            v_loss_clipped = (v_clipped - mb_returns) ** 2
+            # Standardize returns per minibatch to stabilize critic targets.
+            with torch.no_grad():
+                ret_mean = mb_returns.mean()
+                ret_std = mb_returns.std().clamp_min(1e-8)
+
+            mb_returns_norm = (mb_returns - ret_mean) / ret_std
+            mb_values_norm = (mb_values - ret_mean) / ret_std
+            newvalue_norm = (newvalue - ret_mean) / ret_std
+
+            v_clipped = mb_values_norm + torch.clamp(
+                newvalue_norm - mb_values_norm, -vf_clip, vf_clip
+            )
+            v_loss_unclipped = (newvalue_norm - mb_returns_norm) ** 2
+            v_loss_clipped = (v_clipped - mb_returns_norm) ** 2
             v_loss = 0.5*torch.max(v_loss_unclipped, v_loss_clipped).mean()
 
             entropy_loss = entropy.mean()
@@ -772,7 +793,7 @@ class Utilization(Thread):
         self.stopped = True
 
 def downsample(arr, m):
-    if len(arr) < m:
+    if len(arr) <= m:
         return arr
 
     if m == 0:

@@ -5,13 +5,17 @@
 
 static int my_init(Env *env, PyObject *args, PyObject *kwargs) {
   env->T = unpack(kwargs, "time_horizon");
+  env->T_min = unpack(kwargs, "t_min");
+  env->T_max = unpack(kwargs, "t_max");
   env->H = unpack(kwargs, "hurst");
   env->process_type = unpack(kwargs, "process_type");
   env->liquidate = unpack(kwargs, "liquidate");
+  env->liq_type = unpack(kwargs, "liq_type");
   env->friction_coef = unpack(kwargs, "friction_coef");
   env->friction_power = unpack(kwargs, "friction_power");
   env->price_window_size = unpack(kwargs, "price_window_size");
   env->prediction_len = unpack(kwargs, "prediction_len");
+  env->reward_scale = unpack(kwargs, "reward_scale");
   return 0;
 }
 
@@ -19,6 +23,8 @@ static int my_log(PyObject *dict, Log *log) {
   assign_to_dict(dict, "score", log->score);
   assign_to_dict(dict, "episode_return", log->episode_return);
   assign_to_dict(dict, "episode_length", log->episode_length);
+  assign_to_dict(dict, "step_pnl", log->step_pnl);
+  assign_to_dict(dict, "position_abs", log->position_abs);
   assign_to_dict(dict, "terminal_risky", log->terminal_risky);
   assign_to_dict(dict, "terminal_riskless", log->terminal_riskless);
   assign_to_dict(dict, "terminal_price", log->terminal_price);

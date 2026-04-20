@@ -91,15 +91,16 @@ double r_k(double H, int k) {
   return 0.5 * (pow(k + 1, 2 * H) - 2 * pow(k, 2 * H) + pow(abs(k - 1), 2 * H));
 }
 
-// Fractional Brownian motion generator
-double *simulate_fBm(double H, int n, double T) {
+// Fractional Brownian motion generator into preallocated output buffer.
+// The output buffer must have size at least (max(n, 2) + 1).
+int simulate_fBm_into(double *fBm, double H, int n, double T) {
+  if (!fBm) {
+    return 1;
+  }
+
   // Preserve requested number of steps; use an internal embedding size that may grow
   int n_req = n < 2 ? 2 : n;
   int n_embed = next_power_of_2(n_req);
-
-  double *fBm = malloc((n_req + 1) * sizeof(double));
-  if (!fBm)
-    return NULL;
 
   double *fGn = NULL;
 
@@ -121,8 +122,7 @@ double *simulate_fBm(double H, int n, double T) {
       free(Z);
       free(Y);
       free(fGn_tmp);
-      free(fBm);
-      return NULL;
+      return 1;
     }
 
     // Construct covariance vector for fractional Gaussian noise
@@ -206,6 +206,21 @@ double *simulate_fBm(double H, int n, double T) {
     fBm[i + 1] = fBm[i] + inc;
   }
   free(fGn);
+
+  return 0;
+}
+
+// Fractional Brownian motion generator
+double *simulate_fBm(double H, int n, double T) {
+  int n_req = n < 2 ? 2 : n;
+  double *fBm = malloc((n_req + 1) * sizeof(double));
+  if (!fBm)
+    return NULL;
+
+  if (simulate_fBm_into(fBm, H, n, T) != 0) {
+    free(fBm);
+    return NULL;
+  }
 
   return fBm;
 }

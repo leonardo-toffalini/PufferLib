@@ -190,6 +190,38 @@ def sample_logits(logits, action=None):
     is_discrete = isinstance(logits, torch.Tensor)
     if isinstance(logits, torch.distributions.Normal):
         batch = logits.loc.shape[0]
+        tanh_squash = bool(getattr(logits, "_tanh_squash", False))
+        if tanh_squash:
+            eps = 1e-6
+            atanh_eps = 1e-5
+            action_scale = getattr(logits, "_action_scale").to(logits.loc.device, logits.loc.dtype)
+            action_bias = getattr(logits, "_action_bias").to(logits.loc.device, logits.loc.dtype)
+            action_scale = torch.clamp(action_scale, min=eps)
+
+            if action is None:
+                pre_tanh = logits.rsample().view(batch, -1)
+                squashed = torch.tanh(pre_tanh)
+                action = squashed * action_scale + action_bias
+            else:
+                action = action.view(batch, -1)
+                action = torch.nan_to_num(action, nan=0.0, posinf=0.0, neginf=0.0)
+                squashed = (action - action_bias) / action_scale
+                squashed = torch.clamp(squashed, -1.0 + atanh_eps, 1.0 - atanh_eps)
+                pre_tanh = torch.atanh(squashed)
+
+            # Stable tanh Jacobian correction:
+            # log(1 - tanh(z)^2) = 2 * (log(2) - z - softplus(-2z))
+            tanh_logdet = 2.0 * (
+                np.log(2.0) - pre_tanh - torch.nn.functional.softplus(-2.0 * pre_tanh)
+            )
+            log_probs = logits.log_prob(pre_tanh).view(batch, -1)
+            log_probs = log_probs - torch.log(action_scale) - tanh_logdet
+            log_probs = torch.nan_to_num(log_probs.sum(1), nan=0.0, posinf=0.0, neginf=0.0)
+
+            # Use base Normal entropy for stability in PPO entropy bonus.
+            logits_entropy = logits.entropy().view(batch, -1).sum(1)
+            return action, log_probs, logits_entropy
+
         if action is None:
             action = logits.sample().view(batch, -1)
 
